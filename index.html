@@ -567,14 +567,43 @@
             </div>
           </div>
 
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">BGM</div>
+              <div class="setting-hint">背景音楽のON/OFF</div>
+            </div>
+            <div class="toggle" id="music-toggle" role="switch" aria-checked="true" tabindex="0">
+              <div class="knob"></div>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">効果音</div>
+              <div class="setting-hint">攻撃音・被弾音などのON/OFF</div>
+            </div>
+            <div class="toggle" id="sfx-toggle" role="switch" aria-checked="true" tabindex="0">
+              <div class="knob"></div>
+            </div>
+          </div>
+
           <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
             <div>
-              <div class="setting-label">プレイヤー登録</div>
-              <div class="setting-hint">好きなニックネームで登録してください。ホームページの登録名とは別に、他の人と被らない名前にしてください（一度登録すると保存されます）</div>
+              <div class="setting-label">プレイヤー登録・ログイン</div>
+              <div class="setting-hint">ニックネームを入力してください。既に使われている名前なら、そのままログインして進行状況を読み込みます（他の人と被らない名前にしてください）</div>
             </div>
             <input type="text" id="link-nickname" placeholder="ニックネームを入力" style="width:100%; font-family:'VT323',monospace; font-size:16px; padding:8px 10px; border-radius:4px; border:2px solid var(--line-dim); background:var(--bg-panel-edge); color:var(--text-main);">
-            <button class="btn-secondary" id="link-nickname-save">このニックネームで登録する</button>
+            <button class="btn-secondary" id="link-nickname-save">登録／ログインする</button>
             <div class="setting-hint" id="link-status" style="min-height:1.2em;"></div>
+          </div>
+
+          <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+            <div>
+              <div class="setting-label">クラウドにセーブ</div>
+              <div class="setting-hint">スナーク・アップグレード・スキンの進行状況をニックネームに紐づけて保存します。別の端末で同じ名前を入力すれば続きができます</div>
+            </div>
+            <button class="btn-secondary" id="cloud-save-btn">クラウドにセーブする</button>
+            <div class="setting-hint" id="cloud-save-status" style="min-height:1.2em;"></div>
           </div>
 
           <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px; border-bottom:none;">
@@ -694,12 +723,236 @@
   var SAVE_KEY = "snarkRaidSave_v1";
   function loadSave() {
     try {
-      var raw = window.__snarkRaidMemory;
-      return raw ? JSON.parse(raw) : null;
-    } catch(e) { return null; }
+      var raw = localStorage.getItem(SAVE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* fall through to in-memory fallback */ }
+    try {
+      var mem = window.__snarkRaidMemory;
+      return mem ? JSON.parse(mem) : null;
+    } catch (e) { return null; }
   }
   function writeSave(obj) {
-    window.__snarkRaidMemory = JSON.stringify(obj);
+    var json = JSON.stringify(obj);
+    window.__snarkRaidMemory = json; // in-memory fallback for this tab
+    try {
+      localStorage.setItem(SAVE_KEY, json);
+    } catch (e) {
+      // localStorage unavailable (private browsing, quota, etc.) — memory fallback only
+    }
+  }
+
+  // ============ 8-bit sound engine (all synthesized, no audio files) ============
+  var audioCtx = null;
+  var masterGain = null;
+  var musicGain = null;
+  var sfxGain = null;
+  var currentMusicNodes = [];
+  var currentMusicId = null;
+
+  function ensureAudioCtx() {
+    if (audioCtx) return audioCtx;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 1;
+      masterGain.connect(audioCtx.destination);
+
+      musicGain = audioCtx.createGain();
+      musicGain.gain.value = save.musicMuted ? 0 : 0.35;
+      musicGain.connect(masterGain);
+
+      sfxGain = audioCtx.createGain();
+      sfxGain.gain.value = save.sfxMuted ? 0 : 0.5;
+      sfxGain.connect(masterGain);
+    } catch (e) { audioCtx = null; }
+    return audioCtx;
+  }
+
+  // Unlock audio on first user gesture (required by browser autoplay policies).
+  function unlockAudioOnce() {
+    var ctx = ensureAudioCtx();
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    window.removeEventListener('pointerdown', unlockAudioOnce);
+    window.removeEventListener('keydown', unlockAudioOnce);
+    if (gameState === STATE_START) playMusic('title');
+  }
+  window.addEventListener('pointerdown', unlockAudioOnce);
+  window.addEventListener('keydown', unlockAudioOnce);
+
+  // ---- Low-level synth helpers ----
+  function playTone(freq, startOffset, dur, type, gainPeak, destination, opts) {
+    var ctx = ensureAudioCtx();
+    if (!ctx) return;
+    opts = opts || {};
+    var t0 = ctx.currentTime + (startOffset || 0);
+    var osc = ctx.createOscillator();
+    var g = ctx.createGain();
+    osc.type = type || 'square';
+    if (opts.freqEnd != null) {
+      osc.frequency.setValueAtTime(freq, t0);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(20, opts.freqEnd), t0 + dur);
+    } else {
+      osc.frequency.setValueAtTime(freq, t0);
+    }
+    var peak = gainPeak != null ? gainPeak : 0.25;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + Math.min(0.015, dur * 0.2));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g);
+    g.connect(destination || sfxGain);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+    return osc;
+  }
+
+  function playNoise(startOffset, dur, gainPeak, destination) {
+    var ctx = ensureAudioCtx();
+    if (!ctx) return;
+    var t0 = ctx.currentTime + (startOffset || 0);
+    var bufferSize = Math.floor(ctx.sampleRate * dur);
+    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+    }
+    var src = ctx.createBufferSource();
+    src.buffer = buffer;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(gainPeak != null ? gainPeak : 0.3, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(g);
+    g.connect(destination || sfxGain);
+    src.start(t0);
+  }
+
+  // ---- Sound effects ----
+  var SFX = {
+    shoot: function() {
+      if (!ensureAudioCtx()) return;
+      playTone(680, 0, 0.09, 'square', 0.18, sfxGain, { freqEnd: 920 });
+    },
+    hit: function() {
+      if (!ensureAudioCtx()) return;
+      playTone(180, 0, 0.16, 'sawtooth', 0.22, sfxGain, { freqEnd: 70 });
+      playNoise(0, 0.08, 0.15, sfxGain);
+    },
+    kill: function() {
+      if (!ensureAudioCtx()) return;
+      playTone(520, 0, 0.05, 'square', 0.2, sfxGain);
+      playTone(780, 0.05, 0.09, 'square', 0.18, sfxGain, { freqEnd: 1100 });
+    },
+    stageClear: function() {
+      if (!ensureAudioCtx()) return;
+      var notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach(function(n, i) {
+        playTone(n, i * 0.09, 0.16, 'square', 0.22, sfxGain);
+      });
+    },
+    snark: function() {
+      if (!ensureAudioCtx()) return;
+      playTone(900, 0, 0.05, 'square', 0.14, sfxGain);
+      playTone(1300, 0.04, 0.08, 'square', 0.14, sfxGain, { freqEnd: 1700 });
+    },
+    gacha: function(rarity) {
+      if (!ensureAudioCtx()) return;
+      if (rarity === 'legendary' || rarity === 'epic') {
+        var notes = [392, 523.25, 659.25, 783.99, 1046.5];
+        notes.forEach(function(n, i) {
+          playTone(n, i * 0.08, 0.2, 'square', 0.24, sfxGain);
+        });
+      } else {
+        playTone(600, 0, 0.07, 'square', 0.18, sfxGain);
+        playTone(850, 0.07, 0.1, 'square', 0.16, sfxGain, { freqEnd: 1000 });
+      }
+    },
+    click: function() {
+      if (!ensureAudioCtx()) return;
+      playNoise(0, 0.02, 0.12, sfxGain);
+      playTone(1400, 0, 0.02, 'square', 0.06, sfxGain);
+    },
+    gameOver: function() {
+      if (!ensureAudioCtx()) return;
+      var notes = [392, 349.23, 311.13, 261.63];
+      notes.forEach(function(n, i) {
+        playTone(n, i * 0.14, 0.24, 'sawtooth', 0.2, sfxGain);
+      });
+    }
+  };
+
+  function playSfx(name, arg) {
+    if (save.sfxMuted) return;
+    try { SFX[name] && SFX[name](arg); } catch (e) {}
+  }
+
+  // ---- Background music (simple generative chiptune loops) ----
+  var MUSIC_TRACKS = {
+    title: {
+      tempo: 128,
+      pattern: [
+        { n: 523.25, d: 1 }, { n: 659.25, d: 1 }, { n: 783.99, d: 1 }, { n: 659.25, d: 1 },
+        { n: 523.25, d: 1 }, { n: 392.00, d: 1 }, { n: 440.00, d: 1 }, { n: 523.25, d: 1 },
+        { n: 587.33, d: 1 }, { n: 698.46, d: 1 }, { n: 880.00, d: 1 }, { n: 698.46, d: 1 },
+        { n: 587.33, d: 1 }, { n: 523.25, d: 1 }, { n: 440.00, d: 1 }, { n: 392.00, d: 1 }
+      ]
+    },
+    play: {
+      tempo: 168,
+      pattern: [
+        { n: 220.00, d: 0.5 }, { n: 220.00, d: 0.5 }, { n: 261.63, d: 0.5 }, { n: 220.00, d: 0.5 },
+        { n: 293.66, d: 0.5 }, { n: 220.00, d: 0.5 }, { n: 349.23, d: 0.5 }, { n: 293.66, d: 0.5 },
+        { n: 220.00, d: 0.5 }, { n: 220.00, d: 0.5 }, { n: 261.63, d: 0.5 }, { n: 220.00, d: 0.5 },
+        { n: 261.63, d: 0.5 }, { n: 293.66, d: 0.5 }, { n: 349.23, d: 0.5 }, { n: 392.00, d: 0.5 }
+      ]
+    }
+  };
+
+  function stopMusic() {
+    currentMusicNodes.forEach(function(node) {
+      try { node.stop(); } catch (e) {}
+    });
+    currentMusicNodes = [];
+    currentMusicId = null;
+  }
+
+  function playMusic(trackName) {
+    var ctx = ensureAudioCtx();
+    if (!ctx) return;
+    if (currentMusicId === trackName) return; // already playing
+    stopMusic();
+    currentMusicId = trackName;
+    if (save.musicMuted) return;
+
+    var track = MUSIC_TRACKS[trackName];
+    if (!track) return;
+    var beatLen = 60 / track.tempo;
+    var loopId = trackName;
+
+    function scheduleLoop() {
+      if (currentMusicId !== loopId) return; // track changed / stopped, abort chain
+      var t = 0;
+      track.pattern.forEach(function(note) {
+        var osc = ctx.createOscillator();
+        var g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = note.n;
+        var dur = note.d * beatLen;
+        var startTime = ctx.currentTime + t;
+        g.gain.setValueAtTime(0.0001, startTime);
+        g.gain.exponentialRampToValueAtTime(0.16, startTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, startTime + dur * 0.92);
+        osc.connect(g);
+        g.connect(musicGain);
+        osc.start(startTime);
+        osc.stop(startTime + dur);
+        currentMusicNodes.push(osc);
+        t += dur;
+      });
+      // schedule next loop iteration slightly before this one ends
+      setTimeout(function() {
+        if (currentMusicId === loopId) scheduleLoop();
+      }, Math.max(50, (t - 0.15) * 1000));
+    }
+    scheduleLoop();
   }
 
   // ============ Snark Empire homepage link (shared Firebase DB) ============
@@ -754,7 +1007,9 @@
     mobileMode: false,
     skins: ['default'],
     equippedSkin: 'default',
-    linkedNickname: ''
+    linkedNickname: '',
+    musicMuted: false,
+    sfxMuted: false
   };
   var save = loadSave() || JSON.parse(JSON.stringify(defaultSave));
 
@@ -1116,6 +1371,8 @@
     if (!save.equippedSkin) save.equippedSkin = 'default';
     if (!save.upgrades) save.upgrades = {};
     if (typeof save.linkedNickname !== 'string') save.linkedNickname = '';
+    if (typeof save.musicMuted !== 'boolean') save.musicMuted = false;
+    if (typeof save.sfxMuted !== 'boolean') save.sfxMuted = false;
     UPGRADE_KEYS.forEach(function(key) {
       if (typeof save.upgrades[key] !== 'number') save.upgrades[key] = 0;
     });
@@ -1407,6 +1664,7 @@
       bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: sideVx * i, vy: -400 * speedMult, dmg: dmg * 0.8, r: 3 + radiusBonus, pierceLeft: pierce, crit: isCrit });
       bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: -sideVx * i, vy: -400 * speedMult, dmg: dmg * 0.8, r: 3 + radiusBonus, pierceLeft: pierce, crit: isCrit });
     }
+    playSfx('shoot');
   }
 
   function spawnParticles(x, y, color, count) {
@@ -1524,6 +1782,7 @@
       if (Math.abs(dx) < player.w/2 + 3 && Math.abs(dy) < player.h/2 + 3 && player.invuln <= 0) {
         player.hp -= eb.dmg;
         killStreak = 0;
+        playSfx('hit');
         player.invuln = playerInvulnDuration(); player.surgeTimer = 2.5;
         triggerShake(6, 0.2);
         spawnParticles(player.x, player.y, '#b5622f', 8);
@@ -1580,6 +1839,7 @@
           var ramDmg = (en.type === 'brute' ? 24 : 14) * playerRamDamageMult();
           player.hp -= ramDmg;
           killStreak = 0;
+          playSfx('hit');
           player.invuln = playerInvulnDuration(); player.surgeTimer = 2.5;
           triggerShake(8, 0.25);
         }
@@ -1621,11 +1881,13 @@
           en.hp -= dmg;
           if (en.hp <= 0) {
             spawnParticles(en.x, en.y, '#c9a84c', 18);
+            playSfx('kill');
             var amount = en.snark + playerFlatSnarkBonus();
             amount += Math.floor(killStreak * playerSnarkStreakBonus());
             amount = Math.round(amount * playerDropMult());
             if (playerDoubleDropActive() && Math.random() < 0.2) amount *= 2;
             spawnSnarkPop(en.x, en.y, amount);
+            playSfx('snark');
             snarkThisRun += amount;
             killStreak++;
             var repairChance = playerRepairChance();
@@ -1693,6 +1955,7 @@
       enemiesKilledThisStage = 0;
       stage++;
       showToast('STAGE ' + pad2(stage));
+      playSfx('stageClear');
       updateHUD();
     }
   }
@@ -1865,6 +2128,9 @@
     document.getElementById('final-stage').textContent = pad2(stage);
     document.getElementById('final-snark').textContent = snarkThisRun;
     updateHUD();
+    playSfx('gameOver');
+    stopMusic();
+    setTimeout(function() { playMusic('title'); }, 900);
     gameoverOverlay.classList.add('active');
   }
 
@@ -1888,6 +2154,7 @@
     startOverlay.classList.add('active');
     refreshStartGate();
     updateHUD();
+    playMusic('title');
   }
 
   document.getElementById('resume-btn').addEventListener('click', closePauseMenu);
@@ -1901,6 +2168,7 @@
     startOverlay.classList.remove('active');
     resetRun();
     gameState = STATE_PLAYING;
+    playMusic('play');
   });
 
   document.getElementById('start-register-btn').addEventListener('click', function() {
@@ -1929,6 +2197,7 @@
     gameoverOverlay.classList.remove('active');
     resetRun();
     gameState = STATE_PLAYING;
+    playMusic('play');
   });
 
   // ============ Shop ============
@@ -2089,6 +2358,7 @@
     }
     var rInfo = RARITY_INFO[result.skin.rarity];
     drawSkinPreview(gachaPreviewCtx, gachaPreviewCanvas, result.skin, 3.2);
+    playSfx('gacha', result.skin.rarity);
     if (result.duplicate) {
       resultEl.innerHTML = '<span style="color:' + rInfo.color + '">[' + rInfo.label + '] ' + result.skin.name + '</span><br>重複のため ◆' + result.refund + ' に還元';
     } else {
@@ -2155,6 +2425,46 @@
     if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); toggleMobileMode(); }
   });
 
+  var musicToggle = document.getElementById('music-toggle');
+  function setMusicToggleUI() {
+    var on = !save.musicMuted;
+    musicToggle.classList.toggle('on', on);
+    musicToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  function toggleMusic() {
+    save.musicMuted = !save.musicMuted;
+    persist();
+    setMusicToggleUI();
+    if (musicGain) musicGain.gain.value = save.musicMuted ? 0 : 0.35;
+    if (save.musicMuted) {
+      stopMusic();
+    } else {
+      playMusic(gameState === STATE_PLAYING || gameState === STATE_PAUSED ? 'play' : 'title');
+    }
+  }
+  musicToggle.addEventListener('click', toggleMusic);
+  musicToggle.addEventListener('keydown', function(e) {
+    if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); toggleMusic(); }
+  });
+
+  var sfxToggle = document.getElementById('sfx-toggle');
+  function setSfxToggleUI() {
+    var on = !save.sfxMuted;
+    sfxToggle.classList.toggle('on', on);
+    sfxToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  function toggleSfx() {
+    save.sfxMuted = !save.sfxMuted;
+    persist();
+    setSfxToggleUI();
+    if (sfxGain) sfxGain.gain.value = save.sfxMuted ? 0 : 0.5;
+    if (!save.sfxMuted) playSfx('click');
+  }
+  sfxToggle.addEventListener('click', toggleSfx);
+  sfxToggle.addEventListener('keydown', function(e) {
+    if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); toggleSfx(); }
+  });
+
   document.getElementById('open-settings').addEventListener('click', function() {
     settingsOverlay.classList.add('active');
     refreshLinkUI();
@@ -2181,6 +2491,37 @@
     await homepageSetKey('minenko:users', users);
   }
 
+  // ---- Cloud progress (snark / upgrades / skins), keyed by nickname ----
+  var GAME_PROGRESS_KEY_PREFIX = 'minenko:game_progress:';
+
+  function extractProgress() {
+    return {
+      snark: save.snark,
+      upgrades: save.upgrades,
+      skins: save.skins,
+      equippedSkin: save.equippedSkin,
+      ts: Date.now()
+    };
+  }
+
+  function applyProgress(progress) {
+    if (!progress) return;
+    if (typeof progress.snark === 'number') save.snark = progress.snark;
+    if (progress.upgrades) save.upgrades = progress.upgrades;
+    if (Array.isArray(progress.skins)) save.skins = progress.skins;
+    if (progress.equippedSkin) save.equippedSkin = progress.equippedSkin;
+    ensureSaveShape();
+  }
+
+  async function fetchCloudProgress(nickname) {
+    var res = await homepageGetKey(GAME_PROGRESS_KEY_PREFIX + nickname);
+    return (res.reached && res.value) ? res.value : null;
+  }
+
+  async function uploadCloudProgress(nickname) {
+    return await homepageSetKey(GAME_PROGRESS_KEY_PREFIX + nickname, extractProgress());
+  }
+
   document.getElementById('link-nickname-save').addEventListener('click', async function() {
     var input = document.getElementById('link-nickname');
     var statusEl = document.getElementById('link-status');
@@ -2189,12 +2530,47 @@
       statusEl.textContent = 'ニックネームを入力してください。';
       return;
     }
-    statusEl.textContent = '登録中...';
-    save.linkedNickname = nickname;
-    persist();
-    await ensureGameUserRegistered(nickname);
-    statusEl.textContent = '登録しました: ' + nickname;
+    statusEl.textContent = '確認中...';
+    var cloudProgress = await fetchCloudProgress(nickname);
+
+    if (cloudProgress) {
+      // Existing nickname found in the cloud — log in and restore progress.
+      var sure = confirm('「' + nickname + '」の進行状況が見つかりました。この端末の今の進行状況を上書きして読み込みますか？');
+      if (!sure) {
+        statusEl.textContent = 'ログインをキャンセルしました。';
+        return;
+      }
+      applyProgress(cloudProgress);
+      save.linkedNickname = nickname;
+      persist();
+      updateHUD();
+      renderShop();
+      renderHangarSnark();
+      refreshLinkUI();
+      statusEl.textContent = 'ログインしました: ' + nickname + '（進行状況を復元しました）';
+    } else {
+      // New nickname — register it and upload the current local progress.
+      save.linkedNickname = nickname;
+      persist();
+      await ensureGameUserRegistered(nickname);
+      await uploadCloudProgress(nickname);
+      statusEl.textContent = '新規登録しました: ' + nickname;
+    }
     refreshStartGate();
+  });
+
+  document.getElementById('cloud-save-btn').addEventListener('click', async function() {
+    var statusEl = document.getElementById('cloud-save-status');
+    var nickname = save.linkedNickname;
+    if (!nickname) {
+      statusEl.textContent = '先にニックネームを登録してください。';
+      return;
+    }
+    statusEl.textContent = 'セーブ中...';
+    var ok = await uploadCloudProgress(nickname);
+    statusEl.textContent = ok
+      ? '「' + nickname + '」としてセーブしました。'
+      : 'セーブに失敗しました（通信エラー）。もう一度お試しください。';
   });
 
   document.getElementById('link-send-btn').addEventListener('click', async function() {
@@ -2385,9 +2761,17 @@
     persist();
   }
   setMobileToggleUI();
+  setMusicToggleUI();
+  setSfxToggleUI();
   applyMobileMode();
   updateHUD();
   refreshStartGate();
+
+  // Generic UI click sound, applied via delegation so new buttons don't need wiring.
+  document.addEventListener('click', function(e) {
+    var el = e.target.closest('.icon-btn, .btn-primary, .btn-secondary, .pad-btn, .fire-btn, .hangar-tab, .wardrobe-cell, .shop-buy-btn');
+    if (el && !el.disabled) playSfx('click');
+  }, true);
 
 })();
 </script>
