@@ -653,7 +653,15 @@
             <div id="admin-transfer-requests" style="max-height:180px; overflow-y:auto; margin-bottom:14px;"></div>
             <button class="btn-secondary" id="admin-refresh-requests" style="width:100%;">🔄 更新</button>
 
-            <h3 style="font-size:0.85rem; color:var(--player-olive); margin:20px 0 8px;">💰 残高の増減</h3>
+            <h3 style="font-size:0.85rem; color:var(--player-olive); margin:20px 0 8px;">🎮 ゲーム内スナークの増減</h3>
+            <div class="setting-hint" style="margin-bottom:6px;">プレイヤーがゲーム内で使えるスナーク（HUD・ショップの残高）を直接増減します。次回そのプレイヤーがログインまたはクラウドセーブすると反映されます。</div>
+            <select id="admin-game-snark-nickname" style="width:100%; font-family:'VT323',monospace; font-size:16px; padding:8px 10px; border-radius:4px; border:2px solid var(--line-dim); background:var(--bg-panel-edge); color:var(--text-main); margin-bottom:6px;"></select>
+            <input type="number" id="admin-game-snark-amount" placeholder="金額（±可）" style="width:100%; font-family:'VT323',monospace; font-size:16px; padding:8px 10px; border-radius:4px; border:2px solid var(--line-dim); background:var(--bg-panel-edge); color:var(--text-main); margin-bottom:6px;">
+            <button class="btn-secondary" id="admin-game-snark-btn" style="width:100%;">ゲーム内スナークを増減する</button>
+            <div class="setting-hint" id="admin-game-snark-status" style="min-height:1.2em;"></div>
+
+            <h3 style="font-size:0.85rem; color:var(--player-olive); margin:20px 0 8px;">🏦 ホームページ銀行残高の増減</h3>
+            <div class="setting-hint" style="margin-bottom:6px;">ホームページ側の銀行残高（minenko:balances）を直接増減します。ゲーム内スナークとは別物です。</div>
             <select id="admin-grant-nickname" style="width:100%; font-family:'VT323',monospace; font-size:16px; padding:8px 10px; border-radius:4px; border:2px solid var(--line-dim); background:var(--bg-panel-edge); color:var(--text-main); margin-bottom:6px;"></select>
             <input type="number" id="admin-grant-amount" placeholder="金額（±可）" style="width:100%; font-family:'VT323',monospace; font-size:16px; padding:8px 10px; border-radius:4px; border:2px solid var(--line-dim); background:var(--bg-panel-edge); color:var(--text-main); margin-bottom:6px;">
             <button class="btn-secondary" id="admin-grant-btn" style="width:100%;">残高を増減する</button>
@@ -2706,7 +2714,58 @@
     listEl.innerHTML = users.length ? users.map(function(u) {
       return '<div class="admin-row"><span>' + escapeGameHtml(u.nickname) + '</span><span class="amt">' + (balances[u.nickname] || 0) + ' スナーク</span></div>';
     }).join('') : '<div class="admin-empty">メンバーがいません。</div>';
+
+    // Game-internal snark selector (uses cloud progress, not the homepage balance).
+    var gameSnarkSelect = document.getElementById('admin-game-snark-nickname');
+    if (users.length) {
+      gameSnarkSelect.innerHTML = '<option value="">読み込み中...</option>';
+      var rows = await Promise.all(users.map(async function(u) {
+        var progress = await fetchCloudProgress(u.nickname);
+        var snark = (progress && typeof progress.snark === 'number') ? progress.snark : 0;
+        return { nickname: u.nickname, snark: snark };
+      }));
+      gameSnarkSelect.innerHTML = rows.map(function(r) {
+        return '<option value="' + escapeGameHtml(r.nickname) + '">' + escapeGameHtml(r.nickname) + '（ゲーム内◆' + r.snark + '）</option>';
+      }).join('');
+    } else {
+      gameSnarkSelect.innerHTML = '<option value="">メンバーがいません</option>';
+    }
   }
+
+  document.getElementById('admin-game-snark-btn').addEventListener('click', async function() {
+    var statusEl = document.getElementById('admin-game-snark-status');
+    var nickname = document.getElementById('admin-game-snark-nickname').value;
+    var amount = parseInt(document.getElementById('admin-game-snark-amount').value, 10);
+    if (!nickname) { statusEl.textContent = 'メンバーを選んでください。'; return; }
+    if (!amount) { statusEl.textContent = '金額を入力してください（マイナスも可）。'; return; }
+
+    statusEl.textContent = '処理中...';
+    var progress = await fetchCloudProgress(nickname);
+    if (!progress) {
+      // No cloud progress yet for this nickname — start from zero.
+      progress = { snark: 0, upgrades: {}, skins: ['default'], equippedSkin: 'default' };
+    }
+    progress.snark = Math.max(0, (progress.snark || 0) + amount);
+    progress.ts = Date.now();
+    var ok = await homepageSetKey(GAME_PROGRESS_KEY_PREFIX + nickname, progress);
+
+    // If the admin is granting to the account currently logged in on this
+    // device, also apply it locally right away so the HUD updates immediately.
+    if (ok && save.linkedNickname === nickname) {
+      save.snark = progress.snark;
+      persist();
+      updateHUD();
+      renderShop();
+      renderHangarSnark();
+      refreshLinkUI();
+    }
+
+    statusEl.textContent = ok
+      ? (escapeGameHtml(nickname) + 'さんのゲーム内スナークを' + (amount > 0 ? '+' : '') + amount + 'しました（新残高: ' + progress.snark + '）。本人が次回ログインまたはクラウドセーブすると反映されます。')
+      : '保存に失敗しました。もう一度お試しください。';
+    document.getElementById('admin-game-snark-amount').value = '';
+    renderAdminBalancesAndSelects();
+  });
 
   document.getElementById('admin-grant-btn').addEventListener('click', async function() {
     var statusEl = document.getElementById('admin-grant-status');
