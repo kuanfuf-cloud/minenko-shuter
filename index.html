@@ -188,8 +188,16 @@
     z-index: 30;
     padding: 24px;
     text-align: center;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
   }
   .overlay.active { display: flex; }
+
+  .shop-box {
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
 
   .overlay h1 {
     font-family: 'Press Start 2P', monospace;
@@ -242,6 +250,8 @@
   #shop-overlay .shop-box {
     width: 100%;
     max-width: 400px;
+    max-height: 85vh;
+    overflow-y: auto;
     background: var(--bg-panel);
     border: 2px solid var(--line-dim);
     padding: 18px;
@@ -251,6 +261,12 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 14px;
+    position: sticky;
+    top: 0;
+    background: var(--bg-panel);
+    padding-top: 2px;
+    padding-bottom: 8px;
+    z-index: 2;
   }
   .shop-title { font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--player-olive); }
   .shop-snark { font-family: 'Press Start 2P', monospace; font-size: 12px; color: var(--snark-gold); }
@@ -399,7 +415,7 @@
   .admin-empty { font-size: 13px; color: var(--text-dim); padding: 8px 4px; }
 
   /* ---------- Settings ---------- */
-  #settings-overlay .shop-box { width: 100%; max-width: 360px; text-align: left; }
+  #settings-overlay .shop-box { width: 100%; max-width: 360px; max-height: 85vh; overflow-y: auto; text-align: left; }
   .setting-row {
     display: flex;
     justify-content: space-between;
