@@ -181,7 +181,7 @@
     position: absolute;
     inset: 0;
     background: rgba(26,23,18,0.92);
-    display: none;
+    display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
@@ -191,8 +191,27 @@
     overflow-y: auto;
     touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
   }
-  .overlay.active { display: flex; }
+  .overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .overlay .shop-box,
+  .overlay > h1,
+  .overlay > .sub {
+    transform: scale(0.94) translateY(8px);
+    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .overlay.active .shop-box,
+  .overlay.active > h1,
+  .overlay.active > .sub {
+    transform: scale(1) translateY(0);
+  }
 
   .shop-box {
     touch-action: pan-y;
@@ -772,6 +791,7 @@
   var sfxGain = null;
   var currentMusicNodes = [];
   var currentMusicId = null;
+  var musicGeneration = 0;
 
   function ensureAudioCtx() {
     if (audioCtx) return audioCtx;
@@ -931,6 +951,7 @@
   };
 
   function stopMusic() {
+    musicGeneration++; // invalidate any in-flight scheduleLoop timers from older calls
     currentMusicNodes.forEach(function(node) {
       try { node.stop(); } catch (e) {}
     });
@@ -949,10 +970,10 @@
     var track = MUSIC_TRACKS[trackName];
     if (!track) return;
     var beatLen = 60 / track.tempo;
-    var loopId = trackName;
+    var myGeneration = musicGeneration; // capture this call's generation
 
     function scheduleLoop() {
-      if (currentMusicId !== loopId) return; // track changed / stopped, abort chain
+      if (musicGeneration !== myGeneration) return; // a newer playMusic()/stopMusic() call superseded this one
       var t = 0;
       track.pattern.forEach(function(note) {
         var osc = ctx.createOscillator();
@@ -973,7 +994,7 @@
       });
       // schedule next loop iteration slightly before this one ends
       setTimeout(function() {
-        if (currentMusicId === loopId) scheduleLoop();
+        if (musicGeneration === myGeneration) scheduleLoop();
       }, Math.max(50, (t - 0.15) * 1000));
     }
     scheduleLoop();
@@ -1442,6 +1463,24 @@
   var STATE_START = 'start', STATE_PLAYING = 'playing', STATE_OVER = 'over', STATE_PAUSED = 'paused';
   var gameState = STATE_START;
 
+  // ---- Exclusive panel overlays (shop / settings / hangar / admin) ----
+  // Only one of these can be open at a time; opening one closes the others.
+  var PANEL_OVERLAY_IDS = ['shop-overlay', 'settings-overlay', 'hangar-overlay', 'admin-overlay'];
+
+  function closeAllPanelOverlays(exceptId) {
+    PANEL_OVERLAY_IDS.forEach(function(id) {
+      if (id === exceptId) return;
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('active');
+    });
+  }
+
+  function openPanelOverlay(id) {
+    closeAllPanelOverlays(id);
+    var el = document.getElementById(id);
+    if (el) el.classList.add('active');
+  }
+
   var player, bullets, enemies, enemyBullets, particles, snarkPops;
   var stage = 1;
   var snarkThisRun = 0;
@@ -1563,22 +1602,13 @@
 
   window.addEventListener('keydown', function(e) {
     if (e.code === 'Escape') {
-      // If a panel is open, close that first instead of pausing/resetting.
-      if (shopOverlay.classList.contains('active')) {
-        shopOverlay.classList.remove('active');
-        return;
-      }
-      if (settingsOverlay.classList.contains('active')) {
-        settingsOverlay.classList.remove('active');
-        return;
-      }
-      if (hangarOverlay.classList.contains('active')) {
-        hangarOverlay.classList.remove('active');
-        return;
-      }
-      var adminOverlayEl = document.getElementById('admin-overlay');
-      if (adminOverlayEl.classList.contains('active')) {
-        adminOverlayEl.classList.remove('active');
+      // If any panel overlay is open, close it first instead of pausing/resetting.
+      var anyPanelOpen = PANEL_OVERLAY_IDS.some(function(id) {
+        var el = document.getElementById(id);
+        return el && el.classList.contains('active');
+      });
+      if (anyPanelOpen) {
+        closeAllPanelOverlays();
         return;
       }
       if (gameState === STATE_PLAYING) {
@@ -2196,7 +2226,7 @@
   });
 
   document.getElementById('start-register-btn').addEventListener('click', function() {
-    settingsOverlay.classList.add('active');
+    openPanelOverlay('settings-overlay');
     refreshLinkUI();
     setTimeout(function() {
       var input = document.getElementById('link-nickname');
@@ -2315,7 +2345,7 @@
     }
     renderShop();
     document.getElementById('shop-note').style.display = (gameState === STATE_PLAYING) ? 'block' : 'none';
-    shopOverlay.classList.add('active');
+    openPanelOverlay('shop-overlay');
   });
   document.getElementById('close-shop-x').addEventListener('click', function() {
     shopOverlay.classList.remove('active');
@@ -2367,7 +2397,7 @@
     document.getElementById('gacha-result').textContent = '出撃艦のバリエーションを手に入れよう';
     document.getElementById('gacha-roll-btn').textContent = '◆' + GACHA_COST + ' で回す';
     switchHangarTab('gacha');
-    hangarOverlay.classList.add('active');
+    openPanelOverlay('hangar-overlay');
   });
   document.getElementById('close-hangar-x').addEventListener('click', function() {
     hangarOverlay.classList.remove('active');
@@ -2490,7 +2520,7 @@
   });
 
   document.getElementById('open-settings').addEventListener('click', function() {
-    settingsOverlay.classList.add('active');
+    openPanelOverlay('settings-overlay');
     refreshLinkUI();
   });
   document.getElementById('close-settings-x').addEventListener('click', function() {
@@ -2648,7 +2678,7 @@
   var adminLoggedIn = false;
 
   document.getElementById('open-admin-btn').addEventListener('click', function() {
-    adminOverlay.classList.add('active');
+    openPanelOverlay('admin-overlay');
     document.getElementById('admin-gate').style.display = adminLoggedIn ? 'none' : 'block';
     document.getElementById('admin-panel').style.display = adminLoggedIn ? 'block' : 'none';
     if (adminLoggedIn) loadAdminPanel();
