@@ -506,7 +506,16 @@
         <h1>SNARK RAID</h1>
         <div class="sub">敵を撃破してスナークを稼ぎ、深部を目指せ</div>
         <div class="stat-row" id="start-instructions">PC: A/D 移動 ・ SPACE または 右クリックで攻撃</div>
-        <button class="btn-primary" id="start-btn">出撃する</button>
+
+        <div id="start-registered-row" style="display:none;">
+          <div class="stat-row" style="color:var(--player-olive);">登録名: <span id="start-linked-name">-</span></div>
+          <button class="btn-primary" id="start-btn">出撃する</button>
+        </div>
+
+        <div id="start-unregistered-row" style="display:none;">
+          <div class="stat-row" style="color:var(--danger-rust);">プレイには登録が必要です</div>
+          <button class="btn-primary" id="start-register-btn">登録する</button>
+        </div>
       </div>
 
       <!-- Pause overlay -->
@@ -560,20 +569,20 @@
 
           <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
             <div>
-              <div class="setting-label">スナーク帝国ホームページと連携</div>
-              <div class="setting-hint">ホームページに登録したニックネームを入力すると、稼いだスナークを送金できます</div>
+              <div class="setting-label">プレイヤー登録</div>
+              <div class="setting-hint">好きなニックネームで登録してください。ホームページの登録名とは別に、他の人と被らない名前にしてください（一度登録すると保存されます）</div>
             </div>
-            <input type="text" id="link-nickname" placeholder="ホームページのニックネーム" style="width:100%; font-family:'VT323',monospace; font-size:16px; padding:8px 10px; border-radius:4px; border:2px solid var(--line-dim); background:var(--bg-panel-edge); color:var(--text-main);">
-            <button class="btn-secondary" id="link-nickname-save">このニックネームで連携する</button>
+            <input type="text" id="link-nickname" placeholder="ニックネームを入力" style="width:100%; font-family:'VT323',monospace; font-size:16px; padding:8px 10px; border-radius:4px; border:2px solid var(--line-dim); background:var(--bg-panel-edge); color:var(--text-main);">
+            <button class="btn-secondary" id="link-nickname-save">このニックネームで登録する</button>
             <div class="setting-hint" id="link-status" style="min-height:1.2em;"></div>
           </div>
 
           <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px; border-bottom:none;">
             <div>
-              <div class="setting-label">ホームページに送金</div>
-              <div class="setting-hint">確定済みスナーク（◆<span id="link-send-available">0</span>）をホームページ管理者に送金申請します</div>
+              <div class="setting-label">スナークを送金申請する</div>
+              <div class="setting-hint">確定済みスナーク（◆<span id="link-send-available">0</span>）を管理者に送金申請します。管理者が確認後、ホームページの残高に手動で反映します</div>
             </div>
-            <button class="btn-primary" id="link-send-btn" style="margin-top:0;">この分をホームページへ送金する</button>
+            <button class="btn-primary" id="link-send-btn" style="margin-top:0;">この分を送金申請する</button>
             <div class="setting-hint" id="link-send-status" style="min-height:1.2em;"></div>
           </div>
 
@@ -694,7 +703,7 @@
   }
 
   // ============ Snark Empire homepage link (shared Firebase DB) ============
-  var HOMEPAGE_FIREBASE_URL = 'https://minenko-shop-default-rtdb.firebaseio.com';
+  var HOMEPAGE_FIREBASE_URL = 'https://minenko-shuter-default-rtdb.firebaseio.com';
 
   function uidLikeHomepage() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -719,17 +728,6 @@
       });
       return res.ok;
     } catch (e) { return false; }
-  }
-
-  // Checks the shared user list for an exact nickname match.
-  async function homepageNicknameExists(nickname) {
-    var r = await homepageGetKey('minenko:users');
-    if (!r.reached || !r.value) return false;
-    var users = r.value;
-    if (Array.isArray(users)) {
-      return users.some(function(u) { return u && u.nickname === nickname; });
-    }
-    return false;
   }
 
   // Records a transfer *request* only. The actual homepage balance is
@@ -1888,6 +1886,7 @@
     pauseOverlay.classList.remove('active');
     gameoverOverlay.classList.remove('active');
     startOverlay.classList.add('active');
+    refreshStartGate();
     updateHUD();
   }
 
@@ -1903,6 +1902,28 @@
     resetRun();
     gameState = STATE_PLAYING;
   });
+
+  document.getElementById('start-register-btn').addEventListener('click', function() {
+    settingsOverlay.classList.add('active');
+    refreshLinkUI();
+    setTimeout(function() {
+      var input = document.getElementById('link-nickname');
+      if (input) input.focus();
+    }, 50);
+  });
+
+  function refreshStartGate() {
+    var registeredRow = document.getElementById('start-registered-row');
+    var unregisteredRow = document.getElementById('start-unregistered-row');
+    if (save.linkedNickname) {
+      registeredRow.style.display = 'block';
+      unregisteredRow.style.display = 'none';
+      document.getElementById('start-linked-name').textContent = save.linkedNickname;
+    } else {
+      registeredRow.style.display = 'none';
+      unregisteredRow.style.display = 'block';
+    }
+  }
 
   document.getElementById('restart-btn').addEventListener('click', function() {
     gameoverOverlay.classList.remove('active');
@@ -2147,9 +2168,17 @@
     document.getElementById('link-nickname').value = save.linkedNickname || '';
     document.getElementById('link-send-available').textContent = save.snark;
     document.getElementById('link-status').textContent = save.linkedNickname
-      ? ('連携中: ' + save.linkedNickname)
+      ? ('登録済み: ' + save.linkedNickname)
       : '';
     document.getElementById('link-send-status').textContent = '';
+  }
+
+  async function ensureGameUserRegistered(nickname) {
+    var res = await homepageGetKey('minenko:users');
+    var users = (res.reached && Array.isArray(res.value)) ? res.value : [];
+    if (users.some(function(u) { return u && u.nickname === nickname; })) return;
+    users.push({ id: uidLikeHomepage(), nickname: nickname, ts: Date.now() });
+    await homepageSetKey('minenko:users', users);
   }
 
   document.getElementById('link-nickname-save').addEventListener('click', async function() {
@@ -2160,22 +2189,19 @@
       statusEl.textContent = 'ニックネームを入力してください。';
       return;
     }
-    statusEl.textContent = '確認中...';
-    var exists = await homepageNicknameExists(nickname);
-    if (!exists) {
-      statusEl.textContent = 'ホームページに登録が見つかりません。ホームページの「登録」で使ったニックネームと一致しているか確認してください。';
-      return;
-    }
+    statusEl.textContent = '登録中...';
     save.linkedNickname = nickname;
     persist();
-    statusEl.textContent = '連携しました: ' + nickname;
+    await ensureGameUserRegistered(nickname);
+    statusEl.textContent = '登録しました: ' + nickname;
+    refreshStartGate();
   });
 
   document.getElementById('link-send-btn').addEventListener('click', async function() {
     var statusEl = document.getElementById('link-send-status');
     var nickname = save.linkedNickname;
     if (!nickname) {
-      statusEl.textContent = '先にニックネームを連携してください。';
+      statusEl.textContent = '先にニックネームを登録してください。';
       return;
     }
     var amount = save.snark;
@@ -2361,6 +2387,7 @@
   setMobileToggleUI();
   applyMobileMode();
   updateHUD();
+  refreshStartGate();
 
 })();
 </script>
