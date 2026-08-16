@@ -117,6 +117,14 @@
   .icon-btn:hover { border-color: var(--player-olive); color: var(--player-olive); }
   .icon-btn:focus-visible { outline: 2px solid var(--player-olive); outline-offset: 2px; }
 
+  #auto-mode-btn { font-size: 9px; padding: 6px 7px; }
+  #auto-mode-btn.on {
+    background: var(--player-olive);
+    color: var(--bg-void);
+    border-color: var(--player-olive);
+    box-shadow: 0 0 8px rgba(155,184,98,0.5);
+  }
+
   /* ---------- Canvas field ---------- */
   #field-wrap {
     position: relative;
@@ -146,21 +154,50 @@
   }
   #mobile-controls.active { display: flex; }
 
-  .dpad { display: flex; gap: 10px; pointer-events: auto; }
-  .pad-btn {
-    width: 64px;
+  .slide-pad {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .slide-pad-arrow {
+    font-size: 20px;
+    color: var(--player-olive-dim);
+    user-select: none;
+  }
+  .slide-pad-track {
+    position: relative;
+    width: 168px;
     height: 64px;
     background: rgba(36,32,26,0.85);
     border: 2px solid var(--player-olive-dim);
+    border-radius: 32px;
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .slide-pad-knob {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(155,184,98,0.25);
+    border: 2px solid var(--player-olive);
     color: var(--player-olive);
     font-size: 26px;
-    font-family: 'Press Start 2P', monospace;
     display: flex;
     align-items: center;
     justify-content: center;
-    -webkit-tap-highlight-color: transparent;
+    /* left is set via JS during drag; keep transform-based centering out of it */
+    transition: left 0.12s ease, background 0.1s ease;
   }
-  .pad-btn.pressed { background: rgba(155,184,98,0.25); border-color: var(--player-olive); }
+  .slide-pad-knob.dragging {
+    background: rgba(155,184,98,0.4);
+    box-shadow: 0 0 14px rgba(155,184,98,0.5);
+    transition: background 0.1s ease; /* no position transition while actively dragging */
+  }
 
   .fire-btn {
     width: 84px;
@@ -515,6 +552,7 @@
         <span class="hud-value snark" id="snark-val">0</span>
       </div>
       <div id="hud-right">
+        <button class="icon-btn" id="auto-mode-btn" aria-label="オートモード切り替え">AUTO</button>
         <button class="icon-btn" id="open-shop" aria-label="ショップを開く">🛒</button>
         <button class="icon-btn" id="open-hangar" aria-label="きせかえを開く">🚀</button>
         <button class="icon-btn" id="pause-btn" aria-label="一時停止">⏸</button>
@@ -527,9 +565,12 @@
       <canvas id="game"></canvas>
 
       <div id="mobile-controls">
-        <div class="dpad">
-          <button class="pad-btn" id="pad-left" aria-label="左移動">◀</button>
-          <button class="pad-btn" id="pad-right" aria-label="右移動">▶</button>
+        <div class="slide-pad" id="slide-pad" aria-label="左右移動スライダー">
+          <span class="slide-pad-arrow slide-pad-arrow-left">◀</span>
+          <div class="slide-pad-track" id="slide-pad-track">
+            <div class="slide-pad-knob" id="slide-pad-knob">◯</div>
+          </div>
+          <span class="slide-pad-arrow slide-pad-arrow-right">▶</span>
         </div>
         <button class="fire-btn" id="pad-fire" aria-label="攻撃">FIRE</button>
       </div>
@@ -559,6 +600,7 @@
         <div class="sub">作戦を一時中断中</div>
         <div class="stat-row">現在ステージ: <span class="v" id="pause-stage">01</span></div>
         <div class="stat-row">出撃中スナーク: <span class="v" id="pause-snark">0</span></div>
+        <button class="btn-secondary" id="pause-auto-toggle-btn">AUTOモード: OFF</button>
         <button class="btn-primary" id="resume-btn">作戦を再開する</button>
         <button class="btn-secondary" id="quit-run-btn">試合をやめる</button>
       </div>
@@ -1599,6 +1641,7 @@
 
   // ============ Input ============
   var input = { left: false, right: false, fire: false };
+  var autoMode = false;
 
   window.addEventListener('keydown', function(e) {
     if (e.code === 'Escape') {
@@ -1644,8 +1687,8 @@
 
   // Mobile controls
   var mobileControls = document.getElementById('mobile-controls');
-  var padLeft = document.getElementById('pad-left');
-  var padRight = document.getElementById('pad-right');
+  var slidePadTrack = document.getElementById('slide-pad-track');
+  var slidePadKnob = document.getElementById('slide-pad-knob');
   var padFire = document.getElementById('pad-fire');
 
   function bindPress(el, onDown, onUp) {
@@ -1659,9 +1702,76 @@
     el.addEventListener('mouseup', up);
     el.addEventListener('mouseleave', function(e){ if(active) up(e); });
   }
-  bindPress(padLeft, function(){ input.left = true; }, function(){ input.left = false; });
-  bindPress(padRight, function(){ input.right = true; }, function(){ input.right = false; });
   bindPress(padFire, function(){ input.fire = true; }, function(){ input.fire = false; });
+
+  // ---- Slide pad: drag the knob left/right within the track to move ----
+  (function setupSlidePad() {
+    var trackPadding = 4;
+    var knobSize = 56;
+    var dragging = false;
+    var trackRect = null;
+
+    function maxOffset() {
+      return slidePadTrack.clientWidth - knobSize - trackPadding * 2;
+    }
+
+    function setKnobLeft(px) {
+      var clamped = Math.max(0, Math.min(maxOffset(), px));
+      slidePadKnob.style.left = (trackPadding + clamped) + 'px';
+      return clamped;
+    }
+
+    function centerKnob() {
+      setKnobLeft(maxOffset() / 2);
+      input.left = false;
+      input.right = false;
+    }
+
+    function updateFromClientX(clientX) {
+      if (!trackRect) return;
+      var relativeX = clientX - trackRect.left - trackPadding - knobSize / 2;
+      var center = maxOffset() / 2;
+      var clamped = setKnobLeft(relativeX);
+      var deadZone = center * 0.18; // small dead zone around center so it's easy to stop cleanly
+      var delta = clamped - center;
+      input.left = delta < -deadZone;
+      input.right = delta > deadZone;
+    }
+
+    function start(e) {
+      e.preventDefault();
+      dragging = true;
+      trackRect = slidePadTrack.getBoundingClientRect();
+      slidePadKnob.classList.add('dragging');
+      var point = e.touches ? e.touches[0] : e;
+      updateFromClientX(point.clientX);
+    }
+    function move(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      var point = e.touches ? e.touches[0] : e;
+      updateFromClientX(point.clientX);
+    }
+    function end(e) {
+      if (!dragging) return;
+      if (e) e.preventDefault();
+      dragging = false;
+      slidePadKnob.classList.remove('dragging');
+      centerKnob();
+    }
+
+    slidePadTrack.addEventListener('touchstart', start, {passive:false});
+    slidePadTrack.addEventListener('touchmove', move, {passive:false});
+    slidePadTrack.addEventListener('touchend', end, {passive:false});
+    slidePadTrack.addEventListener('touchcancel', end, {passive:false});
+    slidePadTrack.addEventListener('mousedown', start);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+
+    // Keep the knob centered whenever the layout size might have changed.
+    window.addEventListener('resize', centerKnob);
+    centerKnob();
+  })();
 
   function applyMobileMode() {
     if (save.mobileMode) {
@@ -1777,9 +1887,36 @@
     shakeTime = Math.max(shakeTime, dur);
   }
 
+  // ============ Auto mode AI ============
+  // Overrides input.left/right/fire each frame while auto mode is on.
+  // Picks the most threatening enemy (closest to the player vertically)
+  // and steers toward it while firing continuously.
+  function applyAutoModeInput() {
+    input.fire = true;
+    input.left = false;
+    input.right = false;
+
+    if (!enemies.length) return;
+
+    var target = null;
+    var bestY = -Infinity;
+    for (var i = 0; i < enemies.length; i++) {
+      var en = enemies[i];
+      if (en.y > bestY) { bestY = en.y; target = en; }
+    }
+    if (!target) return;
+
+    var dx = target.x - player.x;
+    var deadZone = 6;
+    if (dx > deadZone) input.right = true;
+    else if (dx < -deadZone) input.left = true;
+  }
+
   // ============ Update ============
   function update(dt) {
     dt = Math.min(dt, 0.05);
+
+    if (autoMode) applyAutoModeInput();
 
     // player movement (horizontal only)
     var moveX = 0;
@@ -2217,6 +2354,24 @@
     if (gameState === STATE_PLAYING) openPauseMenu();
     else if (gameState === STATE_PAUSED) closePauseMenu();
   });
+
+  function setAutoModeUI() {
+    document.getElementById('auto-mode-btn').classList.toggle('on', autoMode);
+    document.getElementById('pause-auto-toggle-btn').textContent = 'AUTOモード: ' + (autoMode ? 'ON' : 'OFF');
+  }
+
+  function toggleAutoMode() {
+    autoMode = !autoMode;
+    setAutoModeUI();
+    if (!autoMode) {
+      input.left = false;
+      input.right = false;
+      input.fire = false;
+    }
+  }
+
+  document.getElementById('auto-mode-btn').addEventListener('click', toggleAutoMode);
+  document.getElementById('pause-auto-toggle-btn').addEventListener('click', toggleAutoMode);
 
   document.getElementById('start-btn').addEventListener('click', function() {
     startOverlay.classList.remove('active');
@@ -2868,6 +3023,7 @@
   setMobileToggleUI();
   setMusicToggleUI();
   setSfxToggleUI();
+  setAutoModeUI();
   applyMobileMode();
   updateHUD();
   refreshStartGate();
