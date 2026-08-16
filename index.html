@@ -1676,8 +1676,10 @@
     currentShopOffers = [];
     bossActive = false;
     boss = null;
+    pendingBossSpawn = false;
     activeZoneName = null;
     applyZoneVisuals();
+    resetAutoState();
     updateHUD();
   }
 
@@ -1960,37 +1962,157 @@
   }
 
   // ============ Auto mode AI ============
-  // Overrides input.left/right/fire each frame while auto mode is on.
-  // Picks the most threatening enemy (closest to the player vertically)
-  // and steers toward it while firing continuously.
-  function applyAutoModeInput() {
-    input.fire = true;
-    input.left = false;
-    input.right = false;
+  // A more "human" autopilot: dodges incoming bullets, predicts target
+  // movement before firing, holds fire when a shot wouldn't land, and
+  // gives up chasing a bad target in favor of an easier one.
+  var autoState = {
+    targetId: null,        // reference to the currently-chased enemy/boss object
+    targetLockTime: 0,     // how long we've been chasing this target
+    dodgeCooldown: 0,      // brief pause after a dodge before re-evaluating
+    reactionTimer: 0,      // small delay before reacting to new threats (avoids robotic instant response)
+    fireHesitation: 0      // random micro-pause between shots so it doesn't machine-gun constantly
+  };
 
-    var target = null;
-    if (bossActive && boss) {
-      target = boss;
-    } else if (enemies.length) {
-      var bestY = -Infinity;
-      for (var i = 0; i < enemies.length; i++) {
-        var en = enemies[i];
-        if (en.y > bestY) { bestY = en.y; target = en; }
+  function resetAutoState() {
+    autoState.targetId = null;
+    autoState.targetLockTime = 0;
+    autoState.dodgeCooldown = 0;
+    autoState.reactionTimer = 0;
+    autoState.fireHesitation = 0;
+  }
+
+  // Time (seconds) until a moving point traveling at (vx,vy) crosses the
+  // player's x position, used both to judge incoming bullet danger and to
+  // lead shots against moving targets. Returns Infinity if it never will.
+  function timeToReachX(fromX, vx, toX) {
+    if (Math.abs(vx) < 1) return Infinity;
+    var t = (toX - fromX) / vx;
+    return t > 0 ? t : Infinity;
+  }
+
+  // Finds the nearest incoming enemy bullet that will pass close to the
+  // player's current x within a short time window — i.e. an actual threat,
+  // not just any bullet on screen.
+  function findIncomingThreat() {
+    var best = null;
+    var bestTime = Infinity;
+    for (var i = 0; i < enemyBullets.length; i++) {
+      var eb = enemyBullets[i];
+      if (eb.vy <= 0) continue; // not moving toward the player
+      var timeToPlayerY = (player.y - eb.y) / eb.vy;
+      if (timeToPlayerY <= 0 || timeToPlayerY > 0.9) continue; // too far in time
+      var futureX = eb.x + eb.vx * timeToPlayerY;
+      if (Math.abs(futureX - player.x) < player.w * 1.4 && timeToPlayerY < bestTime) {
+        best = eb;
+        bestTime = timeToPlayerY;
       }
     }
+    return best ? { bullet: best, time: bestTime } : null;
+  }
+
+  // Scores a candidate target: easier/closer/more-aligned targets score higher.
+  // Used both to pick a new target and to decide whether to keep chasing one.
+  function scoreTarget(en) {
+    var hpFactor = 1 / (1 + en.hp / 18);           // lower HP is easier
+    var distFactor = 1 / (1 + Math.abs(en.x - player.x) / 120); // closer in X is easier to line up
+    var urgency = Math.min(1, en.y / (H * 0.75));  // enemies further down are more urgent
+    return hpFactor * 0.4 + distFactor * 0.35 + urgency * 0.25;
+  }
+
+  function pickBestTarget() {
+    if (bossActive && boss) return boss;
+    if (!enemies.length) return null;
+    var best = null, bestScore = -Infinity;
+    for (var i = 0; i < enemies.length; i++) {
+      var en = enemies[i];
+      if (en.type === 'phantom' && en.phased) continue; // can't be hit right now
+      var s = scoreTarget(en);
+      if (s > bestScore) { bestScore = s; best = en; }
+    }
+    return best || enemies[0];
+  }
+
+  function applyAutoModeInput(dt) {
+    input.left = false;
+    input.right = false;
+    input.fire = false;
+
+    if (autoState.dodgeCooldown > 0) autoState.dodgeCooldown -= dt;
+    if (autoState.reactionTimer > 0) autoState.reactionTimer -= dt;
+    if (autoState.fireHesitation > 0) autoState.fireHesitation -= dt;
+
+    // --- 1. Dodge incoming bullets first; this always takes priority ---
+    var threat = findIncomingThreat();
+    if (threat && autoState.dodgeCooldown <= 0) {
+      // Step aside: move away from where the bullet is heading.
+      var dodgeDir = (threat.bullet.x < player.x) ? 1 : -1;
+      // If already near a wall, dodge the other way instead of pinning against it.
+      if (player.x > W - player.w) dodgeDir = -1;
+      if (player.x < player.w) dodgeDir = 1;
+      if (dodgeDir > 0) input.right = true; else input.left = true;
+      autoState.dodgeCooldown = 0.18; // brief commit to the dodge before reconsidering
+      // Still allowed to fire while dodging if a good shot is lined up (handled below).
+    }
+
+    // --- 2. Pick / retain a target, giving up on bad chases ---
+    var target = null;
+    for (var i = 0; i < enemies.length; i++) {
+      if (enemies[i] === autoState.targetId) { target = enemies[i]; break; }
+    }
+    if (bossActive && boss && autoState.targetId === boss) target = boss;
+
+    var shouldReconsider = !target || autoState.reactionTimer <= 0;
+    if (shouldReconsider) {
+      var candidate = pickBestTarget();
+      if (candidate && candidate !== target) {
+        // Give up the old target if the new one scores meaningfully better,
+        // or if we've been stuck on the current one too long (it's slippery).
+        var switchAway = !target
+          || autoState.targetLockTime > 3.2
+          || (target && target.type === 'phantom' && target.phased)
+          || (target && !(bossActive && target === boss) && enemies.indexOf(target) === -1);
+        if (switchAway || scoreTarget(candidate) > (target ? scoreTarget(target) : -1) + 0.15) {
+          target = candidate;
+          autoState.targetLockTime = 0;
+        }
+      }
+      autoState.reactionTimer = 0.12 + Math.random() * 0.1; // small human-like reaction delay
+    }
+    autoState.targetId = target || null;
+    if (target) autoState.targetLockTime += dt;
+
     if (!target) return;
 
-    var dx = target.x - player.x;
-    var deadZone = 6;
-    if (dx > deadZone) input.right = true;
-    else if (dx < -deadZone) input.left = true;
+    // --- 3. Steer toward the target's predicted future position ---
+    var targetVx;
+    if (bossActive && target === boss) {
+      targetVx = boss.moveDir * boss.speed; // bosses strafe linearly, not with a sine wobble
+    } else {
+      targetVx = (target.wobble !== undefined) ? Math.sin(target.wobble) * 18 : 0;
+    }
+    var leadTime = 0.25;
+    var predictedX = target.x + targetVx * leadTime;
+    var dx = predictedX - player.x;
+    var deadZone = 8;
+    if (!(autoState.dodgeCooldown > 0)) { // don't fight the dodge step
+      if (dx > deadZone) input.right = true;
+      else if (dx < -deadZone) input.left = true;
+    }
+
+    // --- 4. Only fire when the shot actually lines up, with slight hesitation ---
+    var aligned = Math.abs(target.x - player.x) < Math.max(target.w, 30) * 0.9;
+    var hasLineOfSight = !(target.type === 'phantom' && target.phased);
+    if (aligned && hasLineOfSight && autoState.fireHesitation <= 0) {
+      input.fire = true;
+      autoState.fireHesitation = 0.05 + Math.random() * 0.07; // tiny human-like gaps between bursts
+    }
   }
 
   // ============ Update ============
   function update(dt) {
     dt = Math.min(dt, 0.05);
 
-    if (autoMode) applyAutoModeInput();
+    if (autoMode) applyAutoModeInput(dt);
 
     // player movement (horizontal only)
     var moveX = 0;
@@ -2207,6 +2329,16 @@
       }
     }
 
+    // Now that the enemy loop above has fully finished, it's safe to clear
+    // the enemies/bullets arrays and spawn the boss without corrupting
+    // an in-progress iteration over those same arrays.
+    if (pendingBossSpawn) {
+      pendingBossSpawn = false;
+      enemies.length = 0;
+      enemyBullets.length = 0;
+      spawnBoss();
+    }
+
     // boss
     if (bossActive && boss) {
       updateBoss(dt);
@@ -2276,6 +2408,7 @@
   var BOSS_STAGE_INTERVAL = 5;
   var bossActive = false;
   var boss = null;
+  var pendingBossSpawn = false;
 
   function isBossStage(s) { return s % BOSS_STAGE_INTERVAL === 0; }
 
@@ -2288,9 +2421,10 @@
       stage++;
       var zoneChanged = currentZone().name !== activeZoneName;
       if (isBossStage(stage)) {
-        enemies.length = 0;
-        enemyBullets.length = 0;
-        spawnBoss();
+        // Defer clearing the enemies/bullets arrays until the current
+        // enemy-loop iteration in update() has finished, since mutating
+        // their length mid-loop would corrupt the loop we're called from.
+        pendingBossSpawn = true;
         showToast('WARNING: BOSS');
         playSfx('stageClear');
         applyZoneVisuals();
@@ -2409,7 +2543,7 @@
     el.textContent = text;
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function() { el.classList.remove('show'); }, 900);
+    toastTimer = setTimeout(function() { el.classList.remove('show'); }, 2600);
   }
 
   // ============ Draw ============
@@ -2710,6 +2844,7 @@
   function toggleAutoMode() {
     autoMode = !autoMode;
     setAutoModeUI();
+    resetAutoState();
     if (!autoMode) {
       input.left = false;
       input.right = false;
