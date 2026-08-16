@@ -1096,7 +1096,8 @@
     equippedSkin: 'default',
     linkedNickname: '',
     musicMuted: false,
-    sfxMuted: false
+    sfxMuted: false,
+    gachaRollCount: 0
   };
   var save = loadSave() || JSON.parse(JSON.stringify(defaultSave));
 
@@ -1107,135 +1108,135 @@
     damage: {
       name: "パルスキャノン強化",
       desc: "弾の威力が上がる",
-      baseCost: 8,
-      costMult: 1.6,
+      baseCost: 100,
+      costMult: 2.1,
       maxLevel: 3,
       apply: function(lvl) { return 1 + lvl * 0.35; } // damage multiplier
     },
     firerate: {
       name: "リロードコイル",
       desc: "連射間隔が短くなる",
-      baseCost: 10,
-      costMult: 1.7,
+      baseCost: 110,
+      costMult: 2.2,
       maxLevel: 3,
       apply: function(lvl) { return Math.max(0.55, 1 - lvl * 0.16); } // interval mult
     },
     hull: {
       name: "装甲プレート",
       desc: "最大HPが増える",
-      baseCost: 12,
-      costMult: 1.55,
+      baseCost: 100,
+      costMult: 2.05,
       maxLevel: 3,
       apply: function(lvl) { return 100 + lvl * 25; } // max hp
     },
     spread: {
       name: "トリプルエミッタ",
       desc: "弾が同時に増える",
-      baseCost: 30,
-      costMult: 2.2,
+      baseCost: 160,
+      costMult: 2.7,
       maxLevel: 3,
       apply: function(lvl) { return lvl; } // extra side shots per level
     },
     thruster: {
       name: "移動スラスター",
       desc: "左右移動の速度が上がる",
-      baseCost: 9,
-      costMult: 1.6,
+      baseCost: 95,
+      costMult: 2.1,
       maxLevel: 3,
       apply: function(lvl) { return 1 + lvl * 0.22; } // speed mult
     },
     luck: {
       name: "ラッキーコア",
       desc: "敵のスナークドロップ率が上がる",
-      baseCost: 14,
-      costMult: 1.8,
+      baseCost: 120,
+      costMult: 2.3,
       maxLevel: 3,
       apply: function(lvl) { return 1 + lvl * 0.2; } // drop mult, e.g. +20%/+40%/+60%
     },
     overcharge: {
       name: "オーバーチャージ",
       desc: "一定確率でダメージ2倍の一撃が出る",
-      baseCost: 20,
-      costMult: 2.0,
+      baseCost: 140,
+      costMult: 2.5,
       maxLevel: 3,
       apply: function(lvl) { return lvl * 0.1; } // crit chance +10%/+20%/+30%
     },
     pierce: {
       name: "貫通コーティング",
       desc: "弾が敵を貫通するようになる",
-      baseCost: 26,
-      costMult: 2.3,
+      baseCost: 150,
+      costMult: 2.9,
       maxLevel: 2,
       apply: function(lvl) { return lvl; } // pierce count
     },
     shieldBuffer: {
       name: "シールドバッファ",
       desc: "被弾後の無敵時間が延びる",
-      baseCost: 12,
-      costMult: 1.7,
+      baseCost: 105,
+      costMult: 2.2,
       maxLevel: 3,
       apply: function(lvl) { return 0.8 + lvl * 0.25; } // invuln seconds
     },
     repairBot: {
       name: "リペアナノボット",
       desc: "撃破時に低確率でHPが少し回復する",
-      baseCost: 16,
-      costMult: 1.9,
+      baseCost: 115,
+      costMult: 2.4,
       maxLevel: 3,
       apply: function(lvl) { return lvl * 0.06; } // chance per kill
     },
     critSensor: {
       name: "クリティカルセンサー",
       desc: "オーバーチャージの発動率がさらに上がる",
-      baseCost: 18,
-      costMult: 1.9,
+      baseCost: 125,
+      costMult: 2.5,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 0.08; } // extra crit chance
     },
     magnet: {
       name: "スナークマグネット",
       desc: "落ちたスナークが自動で吸い寄せられる",
-      baseCost: 15,
-      costMult: 1.8,
+      baseCost: 110,
+      costMult: 2.3,
       maxLevel: 3,
       apply: function(lvl) { return lvl * 40; } // magnet radius px
     },
     bulletSpeed: {
       name: "加速コンデンサ",
       desc: "弾速が上がる",
-      baseCost: 10,
-      costMult: 1.6,
+      baseCost: 95,
+      costMult: 2.1,
       maxLevel: 3,
       apply: function(lvl) { return 1 + lvl * 0.18; }
     },
     bulletSize: {
       name: "拡張バレル",
       desc: "弾が大きくなり当たり判定が広がる",
-      baseCost: 13,
-      costMult: 1.8,
+      baseCost: 105,
+      costMult: 2.4,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 1.2; }
     },
     ramArmor: {
       name: "衝角装甲",
       desc: "敵と接触した際の被ダメージが減る",
-      baseCost: 14,
-      costMult: 1.8,
+      baseCost: 110,
+      costMult: 2.3,
       maxLevel: 3,
       apply: function(lvl) { return 1 - lvl * 0.15; } // damage taken mult
     },
     xpBoost: {
       name: "採掘オプティマイザ",
       desc: "撃破ごとのスナーク獲得量が増える",
-      baseCost: 18,
-      costMult: 2.0,
+      baseCost: 125,
+      costMult: 2.5,
       maxLevel: 3,
       apply: function(lvl) { return lvl; } // flat bonus snark per kill
     },
     doubleDrop: {
       name: "ダブルコアチップ",
       desc: "20%の確率でスナークのドロップ量が2倍になる",
-      baseCost: 25,
+      baseCost: 150,
       costMult: 2.4,
       maxLevel: 1,
       apply: function(lvl) { return lvl; } // 0 or 1 (flag)
@@ -1243,31 +1244,31 @@
     sideAngle: {
       name: "偏向ノズル",
       desc: "サイド弾の広がり角度が狭まり集弾する",
-      baseCost: 11,
-      costMult: 1.7,
+      baseCost: 95,
+      costMult: 2.3,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 0.3; }
     },
     fireRateSurge: {
       name: "サージインジェクタ",
       desc: "被弾直後の数秒間、連射速度が上がる",
-      baseCost: 17,
-      costMult: 1.9,
+      baseCost: 120,
+      costMult: 2.5,
       maxLevel: 2,
       apply: function(lvl) { return lvl; }
     },
     hullRegen: {
       name: "自己修復コーティング",
       desc: "時間経過で少しずつHPが回復する",
-      baseCost: 22,
-      costMult: 2.1,
+      baseCost: 140,
+      costMult: 2.6,
       maxLevel: 3,
       apply: function(lvl) { return lvl * 0.6; } // hp per second
     },
     dashInvuln: {
       name: "位相シフター",
       desc: "移動開始直後の一瞬だけ無敵になる",
-      baseCost: 19,
+      baseCost: 130,
       costMult: 2.0,
       maxLevel: 1,
       apply: function(lvl) { return lvl; }
@@ -1275,7 +1276,7 @@
     snarkVacuum: {
       name: "重力トラップ",
       desc: "画面下部のスナークを自動回収する",
-      baseCost: 16,
+      baseCost: 115,
       costMult: 1.9,
       maxLevel: 1,
       apply: function(lvl) { return lvl; }
@@ -1283,31 +1284,31 @@
     tripleCrit: {
       name: "三連撃コア",
       desc: "オーバーチャージ発動時、追加でダメージが乗る",
-      baseCost: 24,
-      costMult: 2.2,
+      baseCost: 145,
+      costMult: 2.8,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 0.5; } // extra crit mult
     },
     slowField: {
       name: "重力減速フィールド",
       desc: "画面上部の敵の移動速度がわずかに落ちる",
-      baseCost: 20,
-      costMult: 2.0,
+      baseCost: 135,
+      costMult: 2.6,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 0.08; }
     },
     bruteBreaker: {
       name: "対重装甲弾頭",
       desc: "大型の敵に与えるダメージが増える",
-      baseCost: 21,
-      costMult: 2.0,
+      baseCost: 130,
+      costMult: 2.6,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 0.25; }
     },
     droneScanner: {
       name: "早期警戒スキャナ",
       desc: "敵の出現がわずかに見えやすくなる（HPバー表示の閾値低下）",
-      baseCost: 9,
+      baseCost: 90,
       costMult: 1.6,
       maxLevel: 1,
       apply: function(lvl) { return lvl; }
@@ -1315,31 +1316,31 @@
     fireInterval2: {
       name: "デュアルコイル",
       desc: "連射間隔がさらに短くなる",
-      baseCost: 28,
-      costMult: 2.3,
+      baseCost: 160,
+      costMult: 2.9,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 0.08; }
     },
     hullPlate2: {
       name: "複合装甲プレート",
       desc: "最大HPがさらに増える",
-      baseCost: 26,
-      costMult: 2.2,
+      baseCost: 155,
+      costMult: 2.8,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 30; }
     },
     snarkStreak: {
       name: "連撃ボーナス",
       desc: "連続撃破するほどスナーク獲得量が伸びる",
-      baseCost: 23,
-      costMult: 2.1,
+      baseCost: 140,
+      costMult: 2.7,
       maxLevel: 2,
       apply: function(lvl) { return lvl * 0.15; }
     },
     reviveCore: {
       name: "エマージェンシーコア",
       desc: "一度だけ致命傷を耐えてHP1で生き残る",
-      baseCost: 45,
+      baseCost: 220,
       costMult: 3.0,
       maxLevel: 1,
       apply: function(lvl) { return lvl; }
@@ -1347,7 +1348,7 @@
     snarkSense: {
       name: "共鳴センサー",
       desc: "スナークの表示エフェクトが強化される（獲得数がやや見やすくなる）",
-      baseCost: 6,
+      baseCost: 90,
       costMult: 1.5,
       maxLevel: 1,
       apply: function(lvl) { return lvl; }
@@ -1414,9 +1415,14 @@
   }
   function ownsSkin(id) { return save.skins.indexOf(id) !== -1; }
 
-  var GACHA_COST = 100;
+  var GACHA_COST_FIRST = 100;
+  var GACHA_COST_LATER = 500;
   var GACHA_RATES = { common: 0.60, rare: 0.28, epic: 0.10, legendary: 0.02 };
   var DUPLICATE_REFUND = { common: 4, rare: 8, epic: 16, legendary: 40 };
+
+  function currentGachaCost() {
+    return (save.gachaRollCount || 0) === 0 ? GACHA_COST_FIRST : GACHA_COST_LATER;
+  }
 
   function rollGachaRarity() {
     var r = Math.random();
@@ -1434,8 +1440,10 @@
   }
 
   function rollGacha() {
-    if (save.snark < GACHA_COST) return null;
-    save.snark -= GACHA_COST;
+    var cost = currentGachaCost();
+    if (save.snark < cost) return null;
+    save.snark -= cost;
+    save.gachaRollCount = (save.gachaRollCount || 0) + 1;
     var rarity = rollGachaRarity();
     var pool = SKINS.filter(function(s) { return s.rarity === rarity; });
     var pick = pool[Math.floor(Math.random() * pool.length)];
@@ -1460,6 +1468,7 @@
     if (typeof save.linkedNickname !== 'string') save.linkedNickname = '';
     if (typeof save.musicMuted !== 'boolean') save.musicMuted = false;
     if (typeof save.sfxMuted !== 'boolean') save.sfxMuted = false;
+    if (typeof save.gachaRollCount !== 'number') save.gachaRollCount = 0;
     UPGRADE_KEYS.forEach(function(key) {
       if (typeof save.upgrades[key] !== 'number') save.upgrades[key] = 0;
     });
@@ -1500,6 +1509,35 @@
     }
   }
   initStars();
+
+  // ============ Stage zone themes (visual variety as stages progress) ============
+  var STAGE_ZONES = [
+    { minStage: 1,  name: 'ラストベルト',     bg: '#1a1712', star: '#3a3327', accentA: 'rgba(155,184,98,0.05)', accentB: 'rgba(181,98,47,0.05)' },
+    { minStage: 6,  name: 'モスフィールド',   bg: '#151a10', star: '#3a4a2a', accentA: 'rgba(125,156,74,0.08)', accentB: 'rgba(155,184,98,0.05)' },
+    { minStage: 11, name: 'アンバーウェイスト', bg: '#20160d', star: '#4a3320', accentA: 'rgba(217,134,63,0.07)', accentB: 'rgba(181,98,47,0.06)' },
+    { minStage: 16, name: 'アッシュゾーン',   bg: '#171512', star: '#3a3630', accentA: 'rgba(138,130,112,0.07)', accentB: 'rgba(74,69,53,0.06)' },
+    { minStage: 21, name: 'ディープオリーブ域', bg: '#12160c', star: '#2f3a1e', accentA: 'rgba(77,95,44,0.09)', accentB: 'rgba(155,184,98,0.05)' },
+    { minStage: 26, name: 'エンバーコア',     bg: '#1c0f0a', star: '#4a241a', accentA: 'rgba(181,98,47,0.09)', accentB: 'rgba(92,50,24,0.07)' },
+    { minStage: 31, name: 'ゴールデンヴォイド', bg: '#1a160c', star: '#4a3f22', accentA: 'rgba(201,168,76,0.08)', accentB: 'rgba(155,184,98,0.05)' }
+  ];
+
+  function currentZone() {
+    var zone = STAGE_ZONES[0];
+    for (var i = 0; i < STAGE_ZONES.length; i++) {
+      if (stage >= STAGE_ZONES[i].minStage) zone = STAGE_ZONES[i];
+    }
+    return zone;
+  }
+
+  var activeZoneName = null;
+  function applyZoneVisuals() {
+    var zone = currentZone();
+    if (zone.name === activeZoneName) return;
+    activeZoneName = zone.name;
+    fieldWrap.style.background = zone.bg;
+    fieldWrap.style.transition = 'background 0.8s ease';
+    if (zone.minStage > 1) showToast('ZONE: ' + zone.name);
+  }
 
   // ============ Game state ============
   var STATE_START = 'start', STATE_PLAYING = 'playing', STATE_OVER = 'over', STATE_PAUSED = 'paused';
@@ -1636,6 +1674,10 @@
     killStreak = 0;
     reviveUsed = false;
     currentShopOffers = [];
+    bossActive = false;
+    boss = null;
+    activeZoneName = null;
+    applyZoneVisuals();
     updateHUD();
   }
 
@@ -1784,30 +1826,60 @@
   }
 
   // ============ Entity helpers ============
+  // ============ Enemy type roster (10 types + bosses) ============
+  // Each entry: relative stat multipliers vs. a common baseline, visual info,
+  // and which behavior pattern to run each frame ('none' | 'shoot' | 'spread' | 'charge' | 'zigzag').
+  var ENEMY_TYPES = {
+    drone:      { hpMult: 1.0,  speedMult: 1.0,  w: 26, h: 22, snark: 1, minStage: 1,  weight: 30, behavior: 'none',   color: '#b5622f' },
+    shooter:    { hpMult: 1.4,  speedMult: 0.75, w: 26, h: 22, snark: 1, minStage: 4,  weight: 20, behavior: 'shoot',  color: '#d9863f' },
+    brute:      { hpMult: 3.4,  speedMult: 0.55, w: 40, h: 34, snark: 3, minStage: 7,  weight: 10, behavior: 'none',   color: '#b5622f' },
+    zigzagger:  { hpMult: 0.8,  speedMult: 1.25, w: 22, h: 20, snark: 1, minStage: 3,  weight: 18, behavior: 'zigzag', color: '#7d9c4a' },
+    turret:     { hpMult: 2.2,  speedMult: 0.2,  w: 30, h: 26, snark: 2, minStage: 6,  weight: 12, behavior: 'spread', color: '#9bb862' },
+    swarmer:    { hpMult: 0.45, speedMult: 1.5,  w: 16, h: 14, snark: 1, minStage: 5,  weight: 16, behavior: 'none',   color: '#c9a84c' },
+    charger:    { hpMult: 1.6,  speedMult: 0.9,  w: 28, h: 24, snark: 2, minStage: 9,  weight: 12, behavior: 'charge', color: '#5c3218' },
+    sniper:     { hpMult: 1.1,  speedMult: 0.5,  w: 24, h: 22, snark: 2, minStage: 11, weight: 10, behavior: 'shoot',  color: '#8a8270', fireDelay: 2.2, bulletSpeed: 320 },
+    juggernaut: { hpMult: 5.5,  speedMult: 0.4,  w: 46, h: 40, snark: 4, minStage: 14, weight: 6,  behavior: 'spread', color: '#4a4535' },
+    phantom:    { hpMult: 0.9,  speedMult: 1.1,  w: 24, h: 22, snark: 2, minStage: 17, weight: 8,  behavior: 'phase',  color: '#4d5f2c' }
+  };
+  var ENEMY_TYPE_KEYS = Object.keys(ENEMY_TYPES);
+
+  function pickEnemyType() {
+    var pool = ENEMY_TYPE_KEYS.filter(function(k) { return ENEMY_TYPES[k].minStage <= stage; });
+    if (!pool.length) pool = ['drone'];
+    var totalWeight = pool.reduce(function(sum, k) { return sum + ENEMY_TYPES[k].weight; }, 0);
+    var r = Math.random() * totalWeight;
+    for (var i = 0; i < pool.length; i++) {
+      r -= ENEMY_TYPES[pool[i]].weight;
+      if (r <= 0) return pool[i];
+    }
+    return pool[pool.length - 1];
+  }
+
   function spawnEnemy() {
     var tier = 1 + Math.floor(stage / 3);
-    var roll = Math.random();
-    var type = 'drone';
-    if (stage >= 4 && roll < 0.28) type = 'shooter';
-    if (stage >= 7 && roll < 0.12) type = 'brute';
+    var type = pickEnemyType();
+    var def = ENEMY_TYPES[type];
 
-    var baseHp = { drone: 12, shooter: 18, brute: 42 }[type];
-    var baseSpeed = { drone: 55, shooter: 40, brute: 30 }[type];
-    var scaledHp = baseHp + (stage - 1) * 4.5 * tier * 0.6;
-    var scaledSpeed = baseSpeed + (stage - 1) * 2.2;
+    var baseHp = 12 * def.hpMult;
+    var baseSpeed = 55 * def.speedMult;
+    var scaledHp = baseHp + (stage - 1) * 4.5 * tier * 0.6 * def.hpMult;
+    var scaledSpeed = baseSpeed + (stage - 1) * 2.2 * def.speedMult;
 
     enemies.push({
       type: type,
       x: 30 + Math.random() * (W - 60),
       y: -30,
-      w: type === 'brute' ? 40 : 26,
-      h: type === 'brute' ? 34 : 22,
+      w: def.w,
+      h: def.h,
       hp: scaledHp,
       maxHp: scaledHp,
       speed: scaledSpeed,
-      shootTimer: 1 + Math.random(),
+      shootTimer: (def.fireDelay || 1.6) * (0.6 + Math.random() * 0.6),
       wobble: Math.random() * Math.PI * 2,
-      snark: type === 'brute' ? 3 : 1
+      snark: def.snark,
+      phaseTimer: 2 + Math.random() * 2,
+      phased: false,
+      chargeTimer: 1 + Math.random()
     });
   }
 
@@ -1896,13 +1968,15 @@
     input.left = false;
     input.right = false;
 
-    if (!enemies.length) return;
-
     var target = null;
-    var bestY = -Infinity;
-    for (var i = 0; i < enemies.length; i++) {
-      var en = enemies[i];
-      if (en.y > bestY) { bestY = en.y; target = en; }
+    if (bossActive && boss) {
+      target = boss;
+    } else if (enemies.length) {
+      var bestY = -Infinity;
+      for (var i = 0; i < enemies.length; i++) {
+        var en = enemies[i];
+        if (en.y > bestY) { bestY = en.y; target = en; }
+      }
     }
     if (!target) return;
 
@@ -1995,7 +2069,7 @@
     difficultyClock += dt;
     spawnTimer -= dt;
     var targetInterval = Math.max(0.45, spawnInterval - stage * 0.02);
-    if (spawnTimer <= 0) {
+    if (!bossActive && spawnTimer <= 0) {
       spawnEnemy();
       spawnTimer = targetInterval * (0.8 + Math.random() * 0.4);
     }
@@ -2003,23 +2077,61 @@
     // enemies
     for (var i = enemies.length - 1; i >= 0; i--) {
       var en = enemies[i];
+      var def = ENEMY_TYPES[en.type] || ENEMY_TYPES.drone;
       en.wobble += dt * 2;
       var speedMult = 1;
       if (en.y > 0 && en.y < H * 0.6) speedMult = 1 - playerSlowFieldAmount();
-      en.y += en.speed * Math.max(0.3, speedMult) * dt;
-      en.x += Math.sin(en.wobble) * 18 * dt;
 
-      if (en.type === 'shooter') {
+      if (def.behavior === 'zigzag') {
+        en.y += en.speed * Math.max(0.3, speedMult) * dt;
+        en.x += Math.sin(en.wobble * 2.2) * 60 * dt;
+      } else if (def.behavior === 'charge') {
+        en.chargeTimer -= dt;
+        if (en.chargeTimer <= 0) {
+          en.y += en.speed * 3.2 * Math.max(0.3, speedMult) * dt;
+        } else {
+          en.y += en.speed * 0.4 * Math.max(0.3, speedMult) * dt;
+        }
+        en.x += Math.sin(en.wobble) * 12 * dt;
+      } else if (def.behavior === 'phase') {
+        en.phaseTimer -= dt;
+        if (en.phaseTimer <= 0) {
+          en.phased = !en.phased;
+          en.phaseTimer = en.phased ? 0.9 : 1.6;
+        }
+        en.y += en.speed * (en.phased ? 0.15 : 1.3) * Math.max(0.3, speedMult) * dt;
+        en.x += Math.sin(en.wobble) * 18 * dt;
+      } else {
+        en.y += en.speed * Math.max(0.3, speedMult) * dt;
+        en.x += Math.sin(en.wobble) * 18 * dt;
+      }
+
+      if (def.behavior === 'shoot') {
         en.shootTimer -= dt;
         if (en.shootTimer <= 0 && en.y > 0 && en.y < H - 100) {
-          en.shootTimer = 1.6 - Math.min(0.9, stage * 0.04);
+          en.shootTimer = (def.fireDelay || 1.6) - Math.min((def.fireDelay || 1.6) * 0.55, stage * 0.04);
           var ang = Math.atan2(player.y - en.y, player.x - en.x);
+          var bSpeed = def.bulletSpeed || 180;
           enemyBullets.push({
             x: en.x, y: en.y,
-            vx: Math.cos(ang) * 180,
-            vy: Math.sin(ang) * 180,
+            vx: Math.cos(ang) * bSpeed,
+            vy: Math.sin(ang) * bSpeed,
             dmg: 8
           });
+        }
+      } else if (def.behavior === 'spread') {
+        en.shootTimer -= dt;
+        if (en.shootTimer <= 0 && en.y > 0 && en.y < H - 60) {
+          en.shootTimer = 2.4 - Math.min(1.2, stage * 0.03);
+          for (var sAngle = -1; sAngle <= 1; sAngle++) {
+            var baseAng = Math.atan2(player.y - en.y, player.x - en.x) + sAngle * 0.28;
+            enemyBullets.push({
+              x: en.x, y: en.y,
+              vx: Math.cos(baseAng) * 160,
+              vy: Math.sin(baseAng) * 160,
+              dmg: 7
+            });
+          }
         }
       }
 
@@ -2027,7 +2139,7 @@
       var dx = en.x - player.x, dy = en.y - player.y;
       if (Math.abs(dx) < (en.w + player.w)/2 - 4 && Math.abs(dy) < (en.h + player.h)/2 - 4) {
         if (player.invuln <= 0) {
-          var ramDmg = (en.type === 'brute' ? 24 : 14) * playerRamDamageMult();
+          var ramDmg = (en.w >= 40 ? 24 : 14) * playerRamDamageMult();
           player.hp -= ramDmg;
           killStreak = 0;
           playSfx('hit');
@@ -2052,13 +2164,14 @@
       if (en.y > H + 40) { enemies.splice(i, 1); continue; }
 
       // collide with player bullets (swept check to avoid tunneling)
+      if (en.type === 'phantom' && en.phased) continue; // phased out — bullets pass through
       for (var j = bullets.length - 1; j >= 0; j--) {
         var b = bullets[j];
         if (b.hitSet && b.hitSet.indexOf(en) !== -1) continue; // already pierced this enemy
         var hit = segmentHitsBox(b.prevX, b.prevY, b.x, b.y, en.x, en.y, en.w/2 + b.r, en.h/2 + b.r);
         if (hit) {
           var dmg = b.dmg;
-          if (en.type === 'brute') dmg *= (1 + playerBruteBonus());
+          if (en.w >= 40) dmg *= (1 + playerBruteBonus());
           spawnParticles(b.x, b.y, '#9bb862', 4);
 
           if (b.pierceLeft > 0) {
@@ -2091,6 +2204,28 @@
           }
           if (!hit || b.pierceLeft <= 0 || bullets.indexOf(b) === -1) break;
         }
+      }
+    }
+
+    // boss
+    if (bossActive && boss) {
+      updateBoss(dt);
+      if (boss.hp <= 0 && boss.state !== 'dead') {
+        boss.state = 'dead';
+        spawnParticles(boss.x, boss.y, '#c9a84c', 40);
+        triggerShake(14, 0.4);
+        playSfx('stageClear');
+        var bossReward = 40 + Math.floor(stage / BOSS_STAGE_INTERVAL) * 20;
+        var rewardAmount = Math.round(bossReward * playerDropMult());
+        spawnSnarkPop(boss.x, boss.y, rewardAmount);
+        snarkThisRun += rewardAmount;
+        updateHUD();
+        bossActive = false;
+        boss = null;
+        stage++;
+        showToast('BOSS DEFEATED — STAGE ' + pad2(stage));
+        applyZoneVisuals();
+        updateHUD();
       }
     }
 
@@ -2138,16 +2273,131 @@
 
   var enemiesKilledThisStage = 0;
   var killsPerStage = 6;
+  var BOSS_STAGE_INTERVAL = 5;
+  var bossActive = false;
+  var boss = null;
+
+  function isBossStage(s) { return s % BOSS_STAGE_INTERVAL === 0; }
 
   function checkStageAdvance() {
+    if (bossActive) return; // stage only advances when the boss is defeated
     enemiesKilledThisStage++;
     var needed = killsPerStage + Math.floor(stage / 2);
     if (enemiesKilledThisStage >= needed) {
       enemiesKilledThisStage = 0;
       stage++;
-      showToast('STAGE ' + pad2(stage));
-      playSfx('stageClear');
+      var zoneChanged = currentZone().name !== activeZoneName;
+      if (isBossStage(stage)) {
+        enemies.length = 0;
+        enemyBullets.length = 0;
+        spawnBoss();
+        showToast('WARNING: BOSS');
+        playSfx('stageClear');
+        applyZoneVisuals();
+      } else if (zoneChanged) {
+        applyZoneVisuals(); // shows its own "ZONE: ..." toast
+        playSfx('stageClear');
+      } else {
+        showToast('STAGE ' + pad2(stage));
+        playSfx('stageClear');
+      }
       updateHUD();
+    }
+  }
+
+  function spawnBoss() {
+    var bossTier = Math.floor(stage / BOSS_STAGE_INTERVAL);
+    var hp = 260 + bossTier * 220;
+    boss = {
+      x: W / 2,
+      y: -70,
+      w: 78,
+      h: 62,
+      hp: hp,
+      maxHp: hp,
+      speed: 70,
+      state: 'enter', // enter -> fight -> dead
+      attackTimer: 1.4,
+      moveDir: 1,
+      wobble: 0,
+      flashTimer: 0
+    };
+    bossActive = true;
+  }
+
+  function updateBoss(dt) {
+    if (boss.state === 'dead') return;
+    boss.wobble += dt;
+    if (boss.flashTimer > 0) boss.flashTimer -= dt;
+
+    if (boss.state === 'enter') {
+      boss.y += 60 * dt;
+      if (boss.y >= 90) { boss.y = 90; boss.state = 'fight'; }
+    } else if (boss.state === 'fight') {
+      boss.x += boss.moveDir * boss.speed * dt;
+      if (boss.x < 70) { boss.x = 70; boss.moveDir = 1; }
+      if (boss.x > W - 70) { boss.x = W - 70; boss.moveDir = -1; }
+
+      boss.attackTimer -= dt;
+      if (boss.attackTimer <= 0) {
+        var hpPct = boss.hp / boss.maxHp;
+        var pattern = hpPct > 0.5 ? 'radial' : (Math.random() < 0.5 ? 'radial' : 'aimed');
+        if (pattern === 'radial') {
+          var count = 10;
+          for (var i = 0; i < count; i++) {
+            var ang = (Math.PI * 2 / count) * i + boss.wobble * 0.3;
+            enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(ang) * 140, vy: Math.sin(ang) * 140, dmg: 9 });
+          }
+        } else {
+          var aimAng = Math.atan2(player.y - boss.y, player.x - boss.x);
+          for (var s = -2; s <= 2; s++) {
+            var a = aimAng + s * 0.14;
+            enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: 9 });
+          }
+        }
+        boss.attackTimer = Math.max(0.9, 1.8 - hpPct * 0.6);
+      }
+    }
+
+    // bullets vs boss
+    for (var j = bullets.length - 1; j >= 0; j--) {
+      var b = bullets[j];
+      var hit = segmentHitsBox(b.prevX, b.prevY, b.x, b.y, boss.x, boss.y, boss.w/2 + b.r, boss.h/2 + b.r);
+      if (hit) {
+        var dmg = b.dmg;
+        spawnParticles(b.x, b.y, '#9bb862', 3);
+        boss.hp -= dmg;
+        boss.flashTimer = 0.06;
+        if (b.pierceLeft > 0) {
+          b.pierceLeft--;
+          b.hitSet = b.hitSet || [];
+          b.hitSet.push(boss);
+        } else {
+          bullets.splice(j, 1);
+        }
+      }
+    }
+
+    // boss body collision with player
+    if (boss.state === 'fight' && player.invuln <= 0) {
+      var dx = boss.x - player.x, dy = boss.y - player.y;
+      if (Math.abs(dx) < (boss.w + player.w)/2 - 6 && Math.abs(dy) < (boss.h + player.h)/2 - 6) {
+        player.hp -= 20 * playerRamDamageMult();
+        killStreak = 0;
+        playSfx('hit');
+        player.invuln = playerInvulnDuration(); player.surgeTimer = 2.5;
+        triggerShake(10, 0.3);
+        if (player.hp <= 0) {
+          if (playerHasReviveCore() && !reviveUsed) {
+            reviveUsed = true;
+            player.hp = 1;
+            player.invuln = 1.5;
+            showToast('EMERGENCY CORE');
+          } else {
+            doGameOver();
+          }
+        }
+      }
     }
   }
 
@@ -2185,32 +2435,126 @@
   function drawEnemy(en) {
     ctx.save();
     ctx.translate(en.x, en.y);
-    var color = en.type === 'brute' ? '#b5622f' : (en.type === 'shooter' ? '#d9863f' : '#b5622f');
-    ctx.fillStyle = color;
-    if (en.type === 'brute') {
-      ctx.fillRect(-en.w/2, -en.h/2, en.w, en.h);
-      ctx.fillStyle = '#1a1712';
-      ctx.fillRect(-en.w/2+5, -en.h/2+5, 8, 8);
-      ctx.fillRect(en.w/2-13, -en.h/2+5, 8, 8);
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(0, en.h/2);
-      ctx.lineTo(en.w/2, -en.h/2);
-      ctx.lineTo(0, -en.h/4);
-      ctx.lineTo(-en.w/2, -en.h/2);
-      ctx.closePath();
-      ctx.fill();
+    var def = ENEMY_TYPES[en.type] || ENEMY_TYPES.drone;
+    var w = en.w, h = en.h;
+
+    ctx.globalAlpha = (en.type === 'phantom' && en.phased) ? 0.35 : 1;
+    ctx.fillStyle = def.color;
+
+    switch (en.type) {
+      case 'brute':
+      case 'juggernaut':
+        ctx.fillRect(-w/2, -h/2, w, h);
+        ctx.fillStyle = '#1a1712';
+        ctx.fillRect(-w/2+5, -h/2+5, 8, 8);
+        ctx.fillRect(w/2-13, -h/2+5, 8, 8);
+        break;
+      case 'turret':
+        ctx.fillRect(-w/2, -h/3, w, h * 0.66);
+        ctx.beginPath();
+        ctx.arc(0, -h/3, w/2, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = '#1a1712';
+        ctx.fillRect(-3, -h/2 - 6, 6, 10);
+        break;
+      case 'zigzagger':
+        ctx.beginPath();
+        ctx.moveTo(0, -h/2);
+        ctx.lineTo(w/2, 0);
+        ctx.lineTo(0, h/2);
+        ctx.lineTo(-w/2, 0);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      case 'swarmer':
+        ctx.beginPath();
+        ctx.arc(0, 0, w/2, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case 'charger':
+        ctx.beginPath();
+        ctx.moveTo(0, h/2);
+        ctx.lineTo(w/2, -h/3);
+        ctx.lineTo(w/3, -h/2);
+        ctx.lineTo(-w/3, -h/2);
+        ctx.lineTo(-w/2, -h/3);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      case 'sniper':
+        ctx.fillRect(-3, -h/2, 6, h);
+        ctx.fillRect(-w/2, -4, w, 8);
+        break;
+      case 'phantom':
+        ctx.beginPath();
+        ctx.moveTo(0, -h/2);
+        ctx.lineTo(w/2, h/3);
+        ctx.lineTo(0, h/2);
+        ctx.lineTo(-w/2, h/3);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      default: // drone, shooter
+        ctx.beginPath();
+        ctx.moveTo(0, h/2);
+        ctx.lineTo(w/2, -h/2);
+        ctx.lineTo(0, -h/4);
+        ctx.lineTo(-w/2, -h/2);
+        ctx.closePath();
+        ctx.fill();
     }
+
+    ctx.globalAlpha = 1;
+
     // hp bar for tougher enemies (early-warning scanner lowers the threshold)
     var hpBarThreshold = save.upgrades.droneScanner ? 8 : 14;
     if (en.maxHp > hpBarThreshold) {
       var pct = Math.max(0, en.hp / en.maxHp);
       ctx.fillStyle = '#211d16';
-      ctx.fillRect(-en.w/2, -en.h/2 - 8, en.w, 4);
+      ctx.fillRect(-w/2, -h/2 - 8, w, 4);
       ctx.fillStyle = '#7d9c4a';
-      ctx.fillRect(-en.w/2, -en.h/2 - 8, en.w * pct, 4);
+      ctx.fillRect(-w/2, -h/2 - 8, w * pct, 4);
     }
     ctx.restore();
+  }
+
+  function drawBoss(b) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    if (b.flashTimer > 0) ctx.fillStyle = '#ece6d6';
+    else ctx.fillStyle = '#5c3218';
+
+    // hull
+    ctx.beginPath();
+    ctx.moveTo(0, -b.h/2);
+    ctx.lineTo(b.w/2, -b.h/6);
+    ctx.lineTo(b.w/2.4, b.h/2);
+    ctx.lineTo(0, b.h/3);
+    ctx.lineTo(-b.w/2.4, b.h/2);
+    ctx.lineTo(-b.w/2, -b.h/6);
+    ctx.closePath();
+    ctx.fill();
+
+    // core
+    ctx.fillStyle = b.flashTimer > 0 ? '#5c3218' : '#c9a84c';
+    ctx.beginPath();
+    ctx.arc(0, 0, b.w * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // boss HP bar across the top of the field
+    var barW = Math.min(320, W - 40);
+    var barX = W / 2 - barW / 2;
+    var barY = 14;
+    ctx.fillStyle = '#211d16';
+    ctx.fillRect(barX, barY, barW, 10);
+    var pct = Math.max(0, b.hp / b.maxHp);
+    ctx.fillStyle = '#b5622f';
+    ctx.fillRect(barX, barY, barW * pct, 10);
+    ctx.strokeStyle = '#4a4535';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(barX, barY, barW, 10);
   }
 
   function render() {
@@ -2225,7 +2569,7 @@
     }
 
     // stars
-    ctx.fillStyle = '#3a3327';
+    ctx.fillStyle = currentZone().star;
     for (var i = 0; i < stars.length; i++) {
       ctx.fillRect(stars[i].x, stars[i].y, stars[i].size, stars[i].size);
     }
@@ -2250,6 +2594,9 @@
 
       // enemies
       for (var i = 0; i < enemies.length; i++) drawEnemy(enemies[i]);
+
+      // boss
+      if (bossActive && boss) drawBoss(boss);
 
       // player
       var hurt = player.invuln > 0 && Math.floor(player.invuln * 12) % 2 === 0;
@@ -2550,7 +2897,7 @@
     renderHangarSnark();
     drawSkinPreview(gachaPreviewCtx, gachaPreviewCanvas, getSkin(save.equippedSkin), 3.2);
     document.getElementById('gacha-result').textContent = '出撃艦のバリエーションを手に入れよう';
-    document.getElementById('gacha-roll-btn').textContent = '◆' + GACHA_COST + ' で回す';
+    document.getElementById('gacha-roll-btn').textContent = '◆' + currentGachaCost() + ' で回す';
     switchHangarTab('gacha');
     openPanelOverlay('hangar-overlay');
   });
@@ -2562,7 +2909,7 @@
     var result = rollGacha();
     var resultEl = document.getElementById('gacha-result');
     if (!result) {
-      resultEl.textContent = 'スナークが足りない（◆' + GACHA_COST + ' 必要）';
+      resultEl.textContent = 'スナークが足りない（◆' + currentGachaCost() + ' 必要）';
       return;
     }
     var rInfo = RARITY_INFO[result.skin.rarity];
@@ -2573,6 +2920,7 @@
     } else {
       resultEl.innerHTML = '<span style="color:' + rInfo.color + '">[' + rInfo.label + '] ' + result.skin.name + '</span><br>新規獲得！';
     }
+    document.getElementById('gacha-roll-btn').textContent = '◆' + currentGachaCost() + ' で回す';
     renderHangarSnark();
     updateHUD();
   });
@@ -2709,6 +3057,7 @@
       upgrades: save.upgrades,
       skins: save.skins,
       equippedSkin: save.equippedSkin,
+      gachaRollCount: save.gachaRollCount,
       ts: Date.now()
     };
   }
@@ -2719,6 +3068,7 @@
     if (progress.upgrades) save.upgrades = progress.upgrades;
     if (Array.isArray(progress.skins)) save.skins = progress.skins;
     if (progress.equippedSkin) save.equippedSkin = progress.equippedSkin;
+    if (typeof progress.gachaRollCount === 'number') save.gachaRollCount = progress.gachaRollCount;
     ensureSaveShape();
   }
 
