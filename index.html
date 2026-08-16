@@ -1969,6 +1969,7 @@
     targetId: null,        // reference to the currently-chased enemy/boss object
     targetLockTime: 0,     // how long we've been chasing this target
     dodgeCooldown: 0,      // brief pause after a dodge before re-evaluating
+    dodgeDir: 0,           // committed dodge direction (-1/0/1) while dodgeCooldown is active
     reactionTimer: 0,      // small delay before reacting to new threats (avoids robotic instant response)
     fireHesitation: 0      // random micro-pause between shots so it doesn't machine-gun constantly
   };
@@ -1976,6 +1977,7 @@
   function resetAutoState() {
     autoState.targetId = null;
     autoState.targetLockTime = 0;
+    autoState.dodgeDir = 0;
     autoState.dodgeCooldown = 0;
     autoState.reactionTimer = 0;
     autoState.fireHesitation = 0;
@@ -1991,23 +1993,47 @@
   }
 
   // Finds the nearest incoming enemy bullet that will pass close to the
-  // player's current x within a short time window — i.e. an actual threat,
-  // not just any bullet on screen.
-  function findIncomingThreat() {
-    var best = null;
-    var bestTime = Infinity;
+  // Builds a danger score for a candidate player x-position by checking how
+  // close every relevant incoming bullet will pass to it over the next
+  // ~0.7s. Used to evaluate several candidate dodge spots at once instead of
+  // reacting to a single "nearest" bullet, which is what caused jittery
+  // back-and-forth flinching when many bullets were on screen together.
+  function dangerScoreAt(x) {
+    var danger = 0;
     for (var i = 0; i < enemyBullets.length; i++) {
       var eb = enemyBullets[i];
-      if (eb.vy <= 0) continue; // not moving toward the player
+      if (eb.vy <= 0) continue;
       var timeToPlayerY = (player.y - eb.y) / eb.vy;
-      if (timeToPlayerY <= 0 || timeToPlayerY > 0.9) continue; // too far in time
+      if (timeToPlayerY <= 0 || timeToPlayerY > 0.7) continue;
       var futureX = eb.x + eb.vx * timeToPlayerY;
-      if (Math.abs(futureX - player.x) < player.w * 1.4 && timeToPlayerY < bestTime) {
-        best = eb;
-        bestTime = timeToPlayerY;
+      var dist = Math.abs(futureX - x);
+      var margin = player.w * 1.3;
+      if (dist < margin) {
+        // Closer misses and sooner impacts are weighted as more dangerous.
+        danger += (1 - dist / margin) * (1 - timeToPlayerY / 0.7);
       }
     }
-    return best ? { bullet: best, time: bestTime } : null;
+    return danger;
+  }
+
+  // Scans a handful of candidate x-positions around the player (including
+  // staying put) and returns the direction toward the safest one, or null
+  // if the current spot is already safe enough that dodging isn't worth it.
+  function planSafestMove() {
+    var candidates = [-90, -50, -20, 0, 20, 50, 90];
+    var minX = player.w / 2 + 6, maxX = W - player.w / 2 - 6;
+    var here = dangerScoreAt(player.x);
+    if (here <= 0.05) return null; // current spot is already fine
+
+    var bestX = player.x;
+    var bestDanger = here;
+    for (var i = 0; i < candidates.length; i++) {
+      var cx = Math.max(minX, Math.min(maxX, player.x + candidates[i]));
+      var d = dangerScoreAt(cx);
+      if (d < bestDanger - 0.02) { bestDanger = d; bestX = cx; }
+    }
+    if (bestX === player.x) return null;
+    return bestX > player.x ? 1 : -1;
   }
 
   // Scores a candidate target: easier/closer/more-aligned targets score higher.
@@ -2042,17 +2068,22 @@
     if (autoState.fireHesitation > 0) autoState.fireHesitation -= dt;
 
     // --- 1. Dodge incoming bullets first; this always takes priority ---
-    var threat = findIncomingThreat();
-    if (threat && autoState.dodgeCooldown <= 0) {
-      // Step aside: move away from where the bullet is heading.
-      var dodgeDir = (threat.bullet.x < player.x) ? 1 : -1;
-      // If already near a wall, dodge the other way instead of pinning against it.
-      if (player.x > W - player.w) dodgeDir = -1;
-      if (player.x < player.w) dodgeDir = 1;
-      if (dodgeDir > 0) input.right = true; else input.left = true;
-      autoState.dodgeCooldown = 0.18; // brief commit to the dodge before reconsidering
-      // Still allowed to fire while dodging if a good shot is lined up (handled below).
+    // Evaluate the whole local danger map instead of reacting to a single
+    // nearest bullet — with many bullets on screen (dense barrages), picking
+    // just one caused rapid left/right flip-flopping. Committing to a
+    // direction for a short window also prevents jitter.
+    var dodgeDir = 0;
+    if (autoState.dodgeCooldown > 0) {
+      dodgeDir = autoState.dodgeDir || 0;
+    } else {
+      dodgeDir = planSafestMove() || 0;
+      if (dodgeDir !== 0) {
+        autoState.dodgeDir = dodgeDir;
+        autoState.dodgeCooldown = 0.22; // brief commit to the chosen direction before reconsidering
+      }
     }
+    if (dodgeDir > 0) input.right = true;
+    else if (dodgeDir < 0) input.left = true;
 
     // --- 2. Pick / retain a target, giving up on bad chases ---
     var target = null;
@@ -2083,25 +2114,56 @@
 
     if (!target) return;
 
-    // --- 3. Steer toward the target's predicted future position ---
+    // --- 3. Steer to line up a shot that will actually connect, without
+    // ramming the target. Predicts where the target will be when a bullet
+    // fired now would reach its height, then moves under that x position —
+    // player bullets travel essentially straight up, so "aligned" must mean
+    // "directly below the target's future position", not "close to it".
+    var bulletSpeed = 420 * playerBulletSpeedMult();
+    var verticalGap = Math.max(10, player.y - target.y);
+    var travelTime = verticalGap / bulletSpeed;
+
+    var predictedX;
     var targetVx;
     if (bossActive && target === boss) {
-      targetVx = boss.moveDir * boss.speed; // bosses strafe linearly, not with a sine wobble
+      // Bosses bounce between fixed walls, so a long travel time can include
+      // one or more direction flips — fold the straight-line prediction back
+      // into the [70, W-70] range like a reflection to account for that.
+      var raw = boss.x + boss.moveDir * boss.speed * travelTime;
+      var lo = 70, hi = W - 70, span = hi - lo;
+      var rel = (raw - lo) % (2 * span);
+      if (rel < 0) rel += 2 * span;
+      predictedX = (rel <= span) ? (lo + rel) : (hi - (rel - span));
+      targetVx = boss.moveDir * boss.speed;
     } else {
       targetVx = (target.wobble !== undefined) ? Math.sin(target.wobble) * 18 : 0;
+      predictedX = target.x + targetVx * travelTime;
     }
-    var leadTime = 0.25;
-    var predictedX = target.x + targetVx * leadTime;
-    var dx = predictedX - player.x;
+    predictedX = Math.max(player.w / 2 + 6, Math.min(W - player.w / 2 - 6, predictedX));
+
+    // Keep a minimum stand-off distance from large/boss targets so we line
+    // up a shot from below instead of walking into their hitbox.
+    var minGapY = (target === boss ? boss.h : target.h) / 2 + player.h / 2 + 26;
+    var tooClose = (player.y - target.y) < minGapY && Math.abs(target.x - player.x) < ((target === boss ? boss.w : target.w) / 2 + player.w / 2 + 10);
+
+    var dx;
+    if (tooClose) {
+      // Back away sideways from directly under/inside the target's hitbox.
+      dx = (player.x <= target.x) ? -40 : 40;
+    } else {
+      dx = predictedX - player.x;
+    }
     var deadZone = 8;
     if (!(autoState.dodgeCooldown > 0)) { // don't fight the dodge step
       if (dx > deadZone) input.right = true;
       else if (dx < -deadZone) input.left = true;
     }
 
-    // --- 4. Only fire when the shot actually lines up, with slight hesitation ---
-    var aligned = Math.abs(target.x - player.x) < Math.max(target.w, 30) * 0.9;
-    var hasLineOfSight = !(target.type === 'phantom' && target.phased);
+    // --- 4. Only fire when the predicted shot will actually land on the
+    // target's future position, with slight hesitation for a human feel ---
+    var aligned = !tooClose && Math.abs(predictedX - player.x) < Math.max(target.w, 26) * 0.6;
+    var bossPhased = bossActive && target === boss && boss.abilities && boss.abilities.phaseGuard && boss.phased;
+    var hasLineOfSight = !(target.type === 'phantom' && target.phased) && !bossPhased;
     if (aligned && hasLineOfSight && autoState.fireHesitation <= 0) {
       input.fire = true;
       autoState.fireHesitation = 0.05 + Math.random() * 0.07; // tiny human-like gaps between bursts
@@ -2440,8 +2502,19 @@
   }
 
   function spawnBoss() {
-    var bossTier = Math.floor(stage / BOSS_STAGE_INTERVAL);
-    var hp = 260 + bossTier * 220;
+    var bossTier = Math.floor(stage / BOSS_STAGE_INTERVAL); // 1..20 (stage 5..100)
+    var hp = Math.round(900 * Math.pow(1.309, bossTier - 1));
+
+    // Abilities unlock progressively as the boss tier climbs, culminating in
+    // a tier-20 (stage 100) boss that has every ability active at once.
+    var abilities = {
+      armor:     bossTier >= 4,  // flat damage reduction
+      teleport:  bossTier >= 7,  // randomly blinks to a new spot to throw off aim
+      phaseGuard: bossTier >= 10, // periodic brief invulnerability window
+      summon:    bossTier >= 13, // calls in a couple of drones to help
+      enraged:   bossTier >= 16  // faster attacks & teleports in the back half
+    };
+
     boss = {
       x: W / 2,
       y: -70,
@@ -2454,7 +2527,15 @@
       attackTimer: 1.4,
       moveDir: 1,
       wobble: 0,
-      flashTimer: 0
+      flashTimer: 0,
+      tier: bossTier,
+      abilities: abilities,
+      armorPct: abilities.armor ? Math.min(0.5, 0.12 + bossTier * 0.02) : 0,
+      teleportTimer: 3 + Math.random() * 2,
+      phaseTimer: 5 + Math.random() * 2,
+      phased: false,
+      summonTimer: 6 + Math.random() * 3,
+      blinkFlash: 0
     };
     bossActive = true;
   }
@@ -2463,6 +2544,11 @@
     if (boss.state === 'dead') return;
     boss.wobble += dt;
     if (boss.flashTimer > 0) boss.flashTimer -= dt;
+    if (boss.blinkFlash > 0) boss.blinkFlash -= dt;
+
+    var abilities = boss.abilities;
+    var hpPct = boss.hp / boss.maxHp;
+    var enraged = abilities.enraged && hpPct < 0.4;
 
     if (boss.state === 'enter') {
       boss.y += 60 * dt;
@@ -2472,42 +2558,82 @@
       if (boss.x < 70) { boss.x = 70; boss.moveDir = 1; }
       if (boss.x > W - 70) { boss.x = W - 70; boss.moveDir = -1; }
 
+      // Teleport: periodically blink to a new x position to throw off aim.
+      if (abilities.teleport) {
+        boss.teleportTimer -= dt;
+        if (boss.teleportTimer <= 0) {
+          boss.teleportTimer = (enraged ? 2.2 : 3.8) + Math.random() * 2;
+          spawnParticles(boss.x, boss.y, '#c9a84c', 16);
+          boss.x = 90 + Math.random() * (W - 180);
+          boss.blinkFlash = 0.15;
+          spawnParticles(boss.x, boss.y, '#c9a84c', 16);
+        }
+      }
+
+      // Phase guard: brief windows of total invulnerability.
+      if (abilities.phaseGuard) {
+        boss.phaseTimer -= dt;
+        if (boss.phaseTimer <= 0) {
+          boss.phased = !boss.phased;
+          boss.phaseTimer = boss.phased ? 1.1 : (5 + Math.random() * 2);
+        }
+      }
+
+      // Summon: periodically calls in a couple of drones.
+      if (abilities.summon) {
+        boss.summonTimer -= dt;
+        if (boss.summonTimer <= 0) {
+          boss.summonTimer = (enraged ? 5 : 7.5) + Math.random() * 3;
+          for (var sN = 0; sN < 2; sN++) {
+            enemies.push({
+              type: 'drone', x: boss.x + (sN === 0 ? -40 : 40), y: boss.y + 30,
+              w: 26, h: 22, hp: 14 + stage, maxHp: 14 + stage, speed: 70,
+              shootTimer: 1, wobble: Math.random() * Math.PI * 2, snark: 1,
+              phaseTimer: 2, phased: false, chargeTimer: 1
+            });
+          }
+        }
+      }
+
       boss.attackTimer -= dt;
       if (boss.attackTimer <= 0) {
-        var hpPct = boss.hp / boss.maxHp;
         var pattern = hpPct > 0.5 ? 'radial' : (Math.random() < 0.5 ? 'radial' : 'aimed');
         if (pattern === 'radial') {
-          var count = 10;
+          var count = enraged ? 14 : 10;
           for (var i = 0; i < count; i++) {
             var ang = (Math.PI * 2 / count) * i + boss.wobble * 0.3;
             enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(ang) * 140, vy: Math.sin(ang) * 140, dmg: 9 });
           }
         } else {
           var aimAng = Math.atan2(player.y - boss.y, player.x - boss.x);
-          for (var s = -2; s <= 2; s++) {
+          var spreadCount = enraged ? 4 : 2;
+          for (var s = -spreadCount; s <= spreadCount; s++) {
             var a = aimAng + s * 0.14;
             enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, dmg: 9 });
           }
         }
-        boss.attackTimer = Math.max(0.9, 1.8 - hpPct * 0.6);
+        boss.attackTimer = Math.max(enraged ? 0.55 : 0.9, (enraged ? 1.2 : 1.8) - hpPct * 0.6);
       }
     }
 
     // bullets vs boss
-    for (var j = bullets.length - 1; j >= 0; j--) {
-      var b = bullets[j];
-      var hit = segmentHitsBox(b.prevX, b.prevY, b.x, b.y, boss.x, boss.y, boss.w/2 + b.r, boss.h/2 + b.r);
-      if (hit) {
-        var dmg = b.dmg;
-        spawnParticles(b.x, b.y, '#9bb862', 3);
-        boss.hp -= dmg;
-        boss.flashTimer = 0.06;
-        if (b.pierceLeft > 0) {
-          b.pierceLeft--;
-          b.hitSet = b.hitSet || [];
-          b.hitSet.push(boss);
-        } else {
-          bullets.splice(j, 1);
+    var untouchable = (abilities.phaseGuard && boss.phased);
+    if (!untouchable) {
+      for (var j = bullets.length - 1; j >= 0; j--) {
+        var b = bullets[j];
+        var hit = segmentHitsBox(b.prevX, b.prevY, b.x, b.y, boss.x, boss.y, boss.w/2 + b.r, boss.h/2 + b.r);
+        if (hit) {
+          var dmg = b.dmg * (1 - boss.armorPct);
+          spawnParticles(b.x, b.y, '#9bb862', 3);
+          boss.hp -= dmg;
+          boss.flashTimer = 0.06;
+          if (b.pierceLeft > 0) {
+            b.pierceLeft--;
+            b.hitSet = b.hitSet || [];
+            b.hitSet.push(boss);
+          } else {
+            bullets.splice(j, 1);
+          }
         }
       }
     }
@@ -2655,6 +2781,11 @@
   function drawBoss(b) {
     ctx.save();
     ctx.translate(b.x, b.y);
+
+    var phased = b.abilities && b.abilities.phaseGuard && b.phased;
+    ctx.globalAlpha = phased ? 0.35 : 1;
+    if (b.blinkFlash > 0) ctx.globalAlpha = Math.max(ctx.globalAlpha, 0.6);
+
     if (b.flashTimer > 0) ctx.fillStyle = '#ece6d6';
     else ctx.fillStyle = '#5c3218';
 
@@ -2669,12 +2800,20 @@
     ctx.closePath();
     ctx.fill();
 
+    // armor plating ring, visible once the boss has the armor ability
+    if (b.armorPct > 0) {
+      ctx.strokeStyle = '#8a8270';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
     // core
     ctx.fillStyle = b.flashTimer > 0 ? '#5c3218' : '#c9a84c';
     ctx.beginPath();
     ctx.arc(0, 0, b.w * 0.14, 0, Math.PI * 2);
     ctx.fill();
 
+    ctx.globalAlpha = 1;
     ctx.restore();
 
     // boss HP bar across the top of the field
@@ -2684,11 +2823,18 @@
     ctx.fillStyle = '#211d16';
     ctx.fillRect(barX, barY, barW, 10);
     var pct = Math.max(0, b.hp / b.maxHp);
-    ctx.fillStyle = '#b5622f';
+    ctx.fillStyle = phased ? '#7d9c4a' : '#b5622f';
     ctx.fillRect(barX, barY, barW * pct, 10);
     ctx.strokeStyle = '#4a4535';
     ctx.lineWidth = 2;
     ctx.strokeRect(barX, barY, barW, 10);
+
+    if (b.tier) {
+      ctx.font = "10px 'Press Start 2P', monospace";
+      ctx.fillStyle = '#8a8270';
+      ctx.textAlign = 'center';
+      ctx.fillText('BOSS Lv.' + b.tier, W / 2, barY + 24);
+    }
   }
 
   function render() {
