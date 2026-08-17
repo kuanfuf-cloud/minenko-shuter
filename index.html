@@ -70,9 +70,9 @@
   /* ---------- HUD ---------- */
   #hud {
     display: flex;
-    justify-content: space-between;
-    align-items: stretch;
-    padding: 8px 10px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 8px;
     background: var(--bg-panel);
     border-bottom: 2px solid var(--line-dim);
     font-family: 'Press Start 2P', 'VT323', monospace;
@@ -80,16 +80,22 @@
     z-index: 20;
     flex-shrink: 0;
   }
-  .hud-block { display: flex; flex-direction: column; gap: 4px; }
-  .hud-label { color: var(--text-dim); font-size: 8px; letter-spacing: 1px; }
-  .hud-value { font-size: 13px; }
+  #hud-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+  }
+  .hud-block { display: flex; flex-direction: column; gap: 3px; }
+  .hud-label { color: var(--text-dim); font-size: 7px; letter-spacing: 1px; }
+  .hud-value { font-size: 12px; }
   .hud-value.stage { color: var(--player-olive); text-shadow: 0 0 6px rgba(155,184,98,0.6); }
   .hud-value.snark { color: var(--snark-gold); text-shadow: 0 0 6px rgba(201,168,76,0.5); }
   .hud-value.hp { color: var(--danger-rust); text-shadow: 0 0 6px rgba(181,98,47,0.5); }
 
   #hp-bar-outer {
-    width: 90px;
-    height: 12px;
+    width: 72px;
+    height: 10px;
     background: #211d16;
     border: 2px solid var(--danger-rust-dim);
     margin-top: 2px;
@@ -102,22 +108,30 @@
     transition: width 0.15s steps(6);
   }
 
-  #hud-right { display: flex; gap: 14px; align-items: center; }
+  #hud-right {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #hud-right .icon-btn { flex: 1; }
 
   .icon-btn {
     background: var(--bg-panel-edge);
     border: 2px solid var(--line-dim);
     color: var(--text-main);
     font-family: 'Press Start 2P', monospace;
-    font-size: 12px;
-    padding: 6px 8px;
+    font-size: 10px;
+    padding: 6px 3px;
     cursor: pointer;
     line-height: 1;
+    text-align: center;
+    white-space: nowrap;
   }
   .icon-btn:hover { border-color: var(--player-olive); color: var(--player-olive); }
   .icon-btn:focus-visible { outline: 2px solid var(--player-olive); outline-offset: 2px; }
 
-  #auto-mode-btn { font-size: 9px; padding: 6px 7px; }
+  #auto-mode-btn { font-size: 9px; padding: 6px 2px; }
   #auto-mode-btn.on {
     background: var(--player-olive);
     color: var(--bg-void);
@@ -125,17 +139,17 @@
     box-shadow: 0 0 8px rgba(155,184,98,0.5);
   }
 
-  #speed-mode-btn { font-size: 10px; padding: 6px 8px; }
-  #speed-mode-btn.speed-2x {
-    background: var(--player-olive);
-    color: var(--bg-void);
-    border-color: var(--player-olive);
+  #speed-mode-btn { font-size: 9px; padding: 6px 2px; }
+  .speed-2x {
+    background: var(--player-olive) !important;
+    color: var(--bg-void) !important;
+    border-color: var(--player-olive) !important;
     box-shadow: 0 0 8px rgba(155,184,98,0.5);
   }
-  #speed-mode-btn.speed-4x {
-    background: var(--snark-gold);
-    color: var(--bg-void);
-    border-color: var(--snark-gold);
+  .speed-4x {
+    background: var(--snark-gold) !important;
+    color: var(--bg-void) !important;
+    border-color: var(--snark-gold) !important;
     box-shadow: 0 0 10px rgba(201,168,76,0.6);
   }
 
@@ -321,6 +335,11 @@
     margin-top: 10px;
   }
   .btn-secondary:hover { color: var(--text-main); border-color: var(--text-main); }
+
+  #pause-auto-toggle-btn.on {
+    color: var(--player-olive);
+    border-color: var(--player-olive);
+  }
 
   /* ---------- Shop ---------- */
   #shop-overlay .shop-box {
@@ -559,17 +578,19 @@
 
     <!-- HUD -->
     <div id="hud">
-      <div class="hud-block">
-        <span class="hud-label">STAGE</span>
-        <span class="hud-value stage" id="stage-val">01</span>
-      </div>
-      <div class="hud-block">
-        <span class="hud-label">HULL</span>
-        <div id="hp-bar-outer"><div id="hp-bar-inner"></div></div>
-      </div>
-      <div class="hud-block">
-        <span class="hud-label">SNARK</span>
-        <span class="hud-value snark" id="snark-val">0</span>
+      <div id="hud-stats">
+        <div class="hud-block">
+          <span class="hud-label">STAGE</span>
+          <span class="hud-value stage" id="stage-val">01</span>
+        </div>
+        <div class="hud-block">
+          <span class="hud-label">HULL</span>
+          <div id="hp-bar-outer"><div id="hp-bar-inner"></div></div>
+        </div>
+        <div class="hud-block">
+          <span class="hud-label">SNARK</span>
+          <span class="hud-value snark" id="snark-val">0</span>
+        </div>
       </div>
       <div id="hud-right">
         <button class="icon-btn" id="auto-mode-btn" aria-label="オートモード切り替え">AUTO</button>
@@ -620,6 +641,7 @@
         <div class="stat-row">現在ステージ: <span class="v" id="pause-stage">01</span></div>
         <div class="stat-row">出撃中スナーク: <span class="v" id="pause-snark">0</span></div>
         <button class="btn-secondary" id="pause-auto-toggle-btn">AUTOモード: OFF</button>
+        <button class="btn-secondary" id="pause-speed-btn">速度: ×1</button>
         <button class="btn-primary" id="resume-btn">作戦を再開する</button>
         <button class="btn-secondary" id="quit-run-btn">試合をやめる</button>
       </div>
@@ -3076,8 +3098,11 @@
   });
 
   function setAutoModeUI() {
-    document.getElementById('auto-mode-btn').classList.toggle('on', autoMode);
-    document.getElementById('pause-auto-toggle-btn').textContent = 'AUTOモード: ' + (autoMode ? 'ON' : 'OFF');
+    var hudBtn = document.getElementById('auto-mode-btn');
+    hudBtn.classList.toggle('on', autoMode);
+    var pauseBtn = document.getElementById('pause-auto-toggle-btn');
+    pauseBtn.textContent = 'AUTOモード: ' + (autoMode ? 'ON' : 'OFF');
+    pauseBtn.classList.toggle('on', autoMode);
   }
 
   function toggleAutoMode() {
@@ -3091,8 +3116,8 @@
     }
   }
 
-  document.getElementById('auto-mode-btn').addEventListener('click', toggleAutoMode);
   document.getElementById('pause-auto-toggle-btn').addEventListener('click', toggleAutoMode);
+  document.getElementById('auto-mode-btn').addEventListener('click', toggleAutoMode);
 
   var SPEED_4X_NICKNAME = 'みねんこ';
 
@@ -3101,10 +3126,14 @@
   }
 
   function setSpeedModeUI() {
-    var btn = document.getElementById('speed-mode-btn');
-    btn.textContent = '×' + speedMultiplier;
-    btn.classList.toggle('speed-2x', speedMultiplier === 2);
-    btn.classList.toggle('speed-4x', speedMultiplier === 4);
+    var hudBtn = document.getElementById('speed-mode-btn');
+    hudBtn.textContent = '×' + speedMultiplier;
+    hudBtn.classList.toggle('speed-2x', speedMultiplier === 2);
+    hudBtn.classList.toggle('speed-4x', speedMultiplier === 4);
+    var pauseBtn = document.getElementById('pause-speed-btn');
+    pauseBtn.textContent = '速度: ×' + speedMultiplier;
+    pauseBtn.classList.toggle('speed-2x', speedMultiplier === 2);
+    pauseBtn.classList.toggle('speed-4x', speedMultiplier === 4);
   }
 
   function cycleSpeedMode() {
@@ -3118,6 +3147,7 @@
     setSpeedModeUI();
   }
 
+  document.getElementById('pause-speed-btn').addEventListener('click', cycleSpeedMode);
   document.getElementById('speed-mode-btn').addEventListener('click', cycleSpeedMode);
 
   document.getElementById('start-btn').addEventListener('click', function() {
@@ -3293,14 +3323,15 @@
   document.getElementById('tab-gacha').addEventListener('click', function() { switchHangarTab('gacha'); });
   document.getElementById('tab-wardrobe').addEventListener('click', function() { switchHangarTab('wardrobe'); });
 
-  document.getElementById('open-hangar').addEventListener('click', function() {
+  function openHangar() {
     renderHangarSnark();
     drawSkinPreview(gachaPreviewCtx, gachaPreviewCanvas, getSkin(save.equippedSkin), 3.2);
     document.getElementById('gacha-result').textContent = '出撃艦のバリエーションを手に入れよう';
     document.getElementById('gacha-roll-btn').textContent = '◆' + currentGachaCost() + ' で回す';
     switchHangarTab('gacha');
     openPanelOverlay('hangar-overlay');
-  });
+  }
+  document.getElementById('open-hangar').addEventListener('click', openHangar);
   document.getElementById('close-hangar-x').addEventListener('click', function() {
     hangarOverlay.classList.remove('active');
   });
@@ -3422,10 +3453,11 @@
     if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); toggleSfx(); }
   });
 
-  document.getElementById('open-settings').addEventListener('click', function() {
+  function openSettings() {
     openPanelOverlay('settings-overlay');
     refreshLinkUI();
-  });
+  }
+  document.getElementById('open-settings').addEventListener('click', openSettings);
   document.getElementById('close-settings-x').addEventListener('click', function() {
     settingsOverlay.classList.remove('active');
   });
