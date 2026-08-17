@@ -125,6 +125,20 @@
     box-shadow: 0 0 8px rgba(155,184,98,0.5);
   }
 
+  #speed-mode-btn { font-size: 10px; padding: 6px 8px; }
+  #speed-mode-btn.speed-2x {
+    background: var(--player-olive);
+    color: var(--bg-void);
+    border-color: var(--player-olive);
+    box-shadow: 0 0 8px rgba(155,184,98,0.5);
+  }
+  #speed-mode-btn.speed-4x {
+    background: var(--snark-gold);
+    color: var(--bg-void);
+    border-color: var(--snark-gold);
+    box-shadow: 0 0 10px rgba(201,168,76,0.6);
+  }
+
   /* ---------- Canvas field ---------- */
   #field-wrap {
     position: relative;
@@ -143,63 +157,69 @@
   #mobile-controls {
     display: none;
     position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 16px;
-    justify-content: space-between;
-    align-items: flex-end;
+    inset: 0;
     z-index: 15;
     pointer-events: none;
   }
-  #mobile-controls.active { display: flex; }
+  #mobile-controls.active { display: block; }
 
-  .slide-pad {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    pointer-events: none;
-  }
-  .slide-pad-arrow {
-    font-size: 20px;
-    color: var(--player-olive-dim);
-    user-select: none;
-  }
-  .slide-pad-track {
-    position: relative;
-    width: 168px;
-    height: 64px;
-    background: rgba(36,32,26,0.85);
-    border: 2px solid var(--player-olive-dim);
-    border-radius: 32px;
+  /* Invisible touch-capture zone covering the left/movement portion of the
+     screen. A floating stick appears wherever the player first touches
+     inside it, Brawl-Stars style, rather than living at a fixed position. */
+  #move-touch-zone {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 62%;
     pointer-events: auto;
     touch-action: none;
     -webkit-tap-highlight-color: transparent;
   }
-  .slide-pad-knob {
+
+  #floating-stick {
     position: absolute;
-    top: 4px;
-    left: 4px;
+    left: 0;
+    top: 0;
+    width: 132px;
+    height: 132px;
+    margin-left: -66px;
+    margin-top: -66px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  #floating-stick.active { opacity: 1; }
+
+  #floating-stick-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(36,32,26,0.45);
+    border: 2px solid rgba(155,184,98,0.4);
+  }
+  #floating-stick-knob {
+    position: absolute;
     width: 56px;
     height: 56px;
+    left: 50%;
+    top: 50%;
+    margin-left: -28px;
+    margin-top: -28px;
     border-radius: 50%;
-    background: rgba(155,184,98,0.25);
-    border: 2px solid var(--player-olive);
-    color: var(--player-olive);
-    font-size: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    /* left is set via JS during drag; keep transform-based centering out of it */
-    transition: left 0.12s ease, background 0.1s ease;
+    background: rgba(155,184,98,0.3);
+    border: 2px solid rgba(155,184,98,0.85);
+    transition: background 0.1s ease;
   }
-  .slide-pad-knob.dragging {
-    background: rgba(155,184,98,0.4);
+  #floating-stick.dragging #floating-stick-knob {
+    background: rgba(155,184,98,0.5);
     box-shadow: 0 0 14px rgba(155,184,98,0.5);
-    transition: background 0.1s ease; /* no position transition while actively dragging */
   }
 
   .fire-btn {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
     width: 84px;
     height: 84px;
     border-radius: 50%;
@@ -553,6 +573,7 @@
       </div>
       <div id="hud-right">
         <button class="icon-btn" id="auto-mode-btn" aria-label="オートモード切り替え">AUTO</button>
+        <button class="icon-btn" id="speed-mode-btn" aria-label="速度切り替え">×1</button>
         <button class="icon-btn" id="open-shop" aria-label="ショップを開く">🛒</button>
         <button class="icon-btn" id="open-hangar" aria-label="きせかえを開く">🚀</button>
         <button class="icon-btn" id="pause-btn" aria-label="一時停止">⏸</button>
@@ -565,12 +586,10 @@
       <canvas id="game"></canvas>
 
       <div id="mobile-controls">
-        <div class="slide-pad" id="slide-pad" aria-label="左右移動スライダー">
-          <span class="slide-pad-arrow slide-pad-arrow-left">◀</span>
-          <div class="slide-pad-track" id="slide-pad-track">
-            <div class="slide-pad-knob" id="slide-pad-knob">◯</div>
-          </div>
-          <span class="slide-pad-arrow slide-pad-arrow-right">▶</span>
+        <div id="move-touch-zone" aria-label="左右移動タッチエリア"></div>
+        <div id="floating-stick" aria-hidden="true">
+          <div id="floating-stick-ring"></div>
+          <div id="floating-stick-knob"></div>
         </div>
         <button class="fire-btn" id="pad-fire" aria-label="攻撃">FIRE</button>
       </div>
@@ -1686,6 +1705,7 @@
   // ============ Input ============
   var input = { left: false, right: false, fire: false };
   var autoMode = false;
+  var speedMultiplier = 1; // 1, 2, or 4 (4x is gated to a specific nickname)
 
   window.addEventListener('keydown', function(e) {
     if (e.code === 'Escape') {
@@ -1731,8 +1751,9 @@
 
   // Mobile controls
   var mobileControls = document.getElementById('mobile-controls');
-  var slidePadTrack = document.getElementById('slide-pad-track');
-  var slidePadKnob = document.getElementById('slide-pad-knob');
+  var moveTouchZone = document.getElementById('move-touch-zone');
+  var floatingStick = document.getElementById('floating-stick');
+  var floatingStickKnob = document.getElementById('floating-stick-knob');
   var padFire = document.getElementById('pad-fire');
 
   function bindPress(el, onDown, onUp) {
@@ -1748,79 +1769,110 @@
   }
   bindPress(padFire, function(){ input.fire = true; }, function(){ input.fire = false; });
 
-  // ---- Slide pad: drag the knob left/right within the track to move ----
-  (function setupSlidePad() {
-    var trackPadding = 4;
-    var knobSize = 56;
+  // ---- Floating joystick: appears wherever the player first touches inside
+  // the movement zone (Brawl Stars style), instead of living at a fixed
+  // position. Currently only reads the x-axis (left/right), but tracks a
+  // normalized {x, y} vector internally so a future 4-direction update only
+  // needs to start consuming stickVector.y — no input-handling rework needed. ----
+  var stickVector = { x: 0, y: 0 }; // normalized -1..1 on each axis
+  (function setupFloatingStick() {
+    var maxRadius = 58; // how far the knob can stray from the stick's center before clamping
+    var deadZone = 0.16; // fraction of maxRadius treated as "centered" to avoid input noise
     var dragging = false;
-    var trackRect = null;
+    var originX = 0, originY = 0;
+    var activePointerId = null; // touch identifier, so multi-touch doesn't confuse the stick
 
-    function maxOffset() {
-      return slidePadTrack.clientWidth - knobSize - trackPadding * 2;
+    function showStickAt(x, y) {
+      originX = x;
+      originY = y;
+      floatingStick.style.left = x + 'px';
+      floatingStick.style.top = y + 'px';
+      floatingStick.classList.add('active', 'dragging');
     }
 
-    function setKnobLeft(px) {
-      var clamped = Math.max(0, Math.min(maxOffset(), px));
-      slidePadKnob.style.left = (trackPadding + clamped) + 'px';
-      return clamped;
-    }
-
-    function centerKnob() {
-      setKnobLeft(maxOffset() / 2);
+    function hideStick() {
+      floatingStick.classList.remove('active', 'dragging');
+      floatingStickKnob.style.left = '50%';
+      floatingStickKnob.style.top = '50%';
+      stickVector.x = 0;
+      stickVector.y = 0;
       input.left = false;
       input.right = false;
     }
 
-    function updateFromClientX(clientX) {
-      if (!trackRect) return;
-      var relativeX = clientX - trackRect.left - trackPadding - knobSize / 2;
-      var center = maxOffset() / 2;
-      var clamped = setKnobLeft(relativeX);
-      var deadZone = center * 0.18; // small dead zone around center so it's easy to stop cleanly
-      var delta = clamped - center;
-      input.left = delta < -deadZone;
-      input.right = delta > deadZone;
+    function updateFromClientPoint(clientX, clientY) {
+      var dx = clientX - originX;
+      var dy = clientY - originY;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var clampedDist = Math.min(maxRadius, dist);
+      var angle = Math.atan2(dy, dx);
+      var knobX = Math.cos(angle) * clampedDist;
+      var knobY = Math.sin(angle) * clampedDist;
+      floatingStickKnob.style.left = (66 + knobX) + 'px';
+      floatingStickKnob.style.top = (66 + knobY) + 'px';
+
+      var normalized = clampedDist / maxRadius; // 0..1
+      if (normalized < deadZone) {
+        stickVector.x = 0;
+        stickVector.y = 0;
+      } else {
+        stickVector.x = Math.cos(angle) * normalized;
+        stickVector.y = Math.sin(angle) * normalized;
+      }
+
+      // Only the x-axis drives movement for now (left/right only, as requested).
+      input.left = stickVector.x < -deadZone;
+      input.right = stickVector.x > deadZone;
     }
 
     function start(e) {
+      if (dragging) return;
       e.preventDefault();
+      var point = e.changedTouches ? e.changedTouches[0] : e;
+      activePointerId = e.changedTouches ? point.identifier : 'mouse';
       dragging = true;
-      trackRect = slidePadTrack.getBoundingClientRect();
-      slidePadKnob.classList.add('dragging');
-      var point = e.touches ? e.touches[0] : e;
-      updateFromClientX(point.clientX);
+      showStickAt(point.clientX, point.clientY);
+      updateFromClientPoint(point.clientX, point.clientY);
+    }
+    function findActivePoint(e) {
+      if (!e.changedTouches) return e;
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === activePointerId) return e.changedTouches[i];
+      }
+      return null;
     }
     function move(e) {
       if (!dragging) return;
+      var point = findActivePoint(e);
+      if (!point) return;
       e.preventDefault();
-      var point = e.touches ? e.touches[0] : e;
-      updateFromClientX(point.clientX);
+      updateFromClientPoint(point.clientX, point.clientY);
     }
     function end(e) {
       if (!dragging) return;
-      if (e) e.preventDefault();
+      var point = findActivePoint(e);
+      if (e.changedTouches && !point) return; // a different finger lifted; ignore
+      if (e.preventDefault) e.preventDefault();
       dragging = false;
-      slidePadKnob.classList.remove('dragging');
-      centerKnob();
+      activePointerId = null;
+      hideStick();
     }
 
-    slidePadTrack.addEventListener('touchstart', start, {passive:false});
-    slidePadTrack.addEventListener('touchmove', move, {passive:false});
-    slidePadTrack.addEventListener('touchend', end, {passive:false});
-    slidePadTrack.addEventListener('touchcancel', end, {passive:false});
-    slidePadTrack.addEventListener('mousedown', start);
+    moveTouchZone.addEventListener('touchstart', start, {passive:false});
+    moveTouchZone.addEventListener('touchmove', move, {passive:false});
+    moveTouchZone.addEventListener('touchend', end, {passive:false});
+    moveTouchZone.addEventListener('touchcancel', end, {passive:false});
+    moveTouchZone.addEventListener('mousedown', start);
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', end);
 
-    // Keep the knob centered whenever the layout size might have changed.
-    window.addEventListener('resize', centerKnob);
-    centerKnob();
+    hideStick();
   })();
 
   function applyMobileMode() {
     if (save.mobileMode) {
       mobileControls.classList.add('active');
-      document.getElementById('start-instructions').textContent = 'スマホ操作: 矢印ボタンで移動・FIREボタンで攻撃';
+      document.getElementById('start-instructions').textContent = 'スマホ操作: 画面左側をタッチしてスティックで移動・FIREボタンで攻撃';
     } else {
       mobileControls.classList.remove('active');
       document.getElementById('start-instructions').textContent = 'PC: A/D 移動 ・ SPACE または 右クリックで攻撃';
@@ -2025,11 +2077,19 @@
     var here = dangerScoreAt(player.x);
     if (here <= 0.05) return null; // current spot is already fine
 
+    // Slight bonus for candidate spots that would also let us land a shot,
+    // so when several escape routes are equally safe, the bot picks the one
+    // that keeps it fighting instead of purely retreating.
+    function effectiveDanger(x) {
+      var d = dangerScoreAt(x);
+      return wouldShotLandFrom(x) ? d - 0.06 : d;
+    }
+
     var bestX = player.x;
-    var bestDanger = here;
+    var bestDanger = effectiveDanger(player.x);
     for (var i = 0; i < candidates.length; i++) {
       var cx = Math.max(minX, Math.min(maxX, player.x + candidates[i]));
-      var d = dangerScoreAt(cx);
+      var d = effectiveDanger(cx);
       if (d < bestDanger - 0.02) { bestDanger = d; bestX = cx; }
     }
     if (bestX === player.x) return null;
@@ -2056,6 +2116,40 @@
       if (s > bestScore) { bestScore = s; best = en; }
     }
     return best || enemies[0];
+  }
+
+  // Checks every live target and returns true if firing right now, from the
+  // given x position, would actually connect with something — independent
+  // of whatever the AI's "chased" target currently is. This is what lets the
+  // bot fire opportunistically while dodging: even mid-dodge, if a shot from
+  // its current spot would land on some enemy, it takes it.
+  function wouldShotLandFrom(fromX) {
+    var bulletSpeed = 420 * playerBulletSpeedMult();
+
+    function checkOne(en, isBoss) {
+      if (en.type === 'phantom' && en.phased) return false;
+      if (isBoss && en.abilities && en.abilities.phaseGuard && en.phased) return false;
+      var verticalGap = Math.max(10, player.y - en.y);
+      var travelTime = verticalGap / bulletSpeed;
+      var predictedX;
+      if (isBoss) {
+        var raw = en.x + en.moveDir * en.speed * travelTime;
+        var lo = 70, hi = W - 70, span = hi - lo;
+        var rel = (raw - lo) % (2 * span);
+        if (rel < 0) rel += 2 * span;
+        predictedX = (rel <= span) ? (lo + rel) : (hi - (rel - span));
+      } else {
+        var vx = (en.wobble !== undefined) ? Math.sin(en.wobble) * 18 : 0;
+        predictedX = en.x + vx * travelTime;
+      }
+      return Math.abs(predictedX - fromX) < Math.max(en.w, 26) * 0.6;
+    }
+
+    if (bossActive && boss && checkOne(boss, true)) return true;
+    for (var i = 0; i < enemies.length; i++) {
+      if (checkOne(enemies[i], false)) return true;
+    }
+    return false;
   }
 
   function applyAutoModeInput(dt) {
@@ -2159,12 +2253,11 @@
       else if (dx < -deadZone) input.left = true;
     }
 
-    // --- 4. Only fire when the predicted shot will actually land on the
-    // target's future position, with slight hesitation for a human feel ---
-    var aligned = !tooClose && Math.abs(predictedX - player.x) < Math.max(target.w, 26) * 0.6;
-    var bossPhased = bossActive && target === boss && boss.abilities && boss.abilities.phaseGuard && boss.phased;
-    var hasLineOfSight = !(target.type === 'phantom' && target.phased) && !bossPhased;
-    if (aligned && hasLineOfSight && autoState.fireHesitation <= 0) {
+    // --- 4. Fire whenever a shot from the CURRENT position would actually
+    // land on something — checked independently of the chase/dodge target,
+    // so the bot still shoots opportunistically while sidestepping bullets
+    // if an enemy happens to line up overhead. ---
+    if (wouldShotLandFrom(player.x) && autoState.fireHesitation <= 0) {
       input.fire = true;
       autoState.fireHesitation = 0.05 + Math.random() * 0.07; // tiny human-like gaps between bursts
     }
@@ -2172,7 +2265,7 @@
 
   // ============ Update ============
   function update(dt) {
-    dt = Math.min(dt, 0.05);
+    dt = Math.min(dt, 0.05) * speedMultiplier;
 
     if (autoMode) applyAutoModeInput(dt);
 
@@ -3001,6 +3094,32 @@
   document.getElementById('auto-mode-btn').addEventListener('click', toggleAutoMode);
   document.getElementById('pause-auto-toggle-btn').addEventListener('click', toggleAutoMode);
 
+  var SPEED_4X_NICKNAME = 'みねんこ';
+
+  function has4xAccess() {
+    return save.linkedNickname === SPEED_4X_NICKNAME;
+  }
+
+  function setSpeedModeUI() {
+    var btn = document.getElementById('speed-mode-btn');
+    btn.textContent = '×' + speedMultiplier;
+    btn.classList.toggle('speed-2x', speedMultiplier === 2);
+    btn.classList.toggle('speed-4x', speedMultiplier === 4);
+  }
+
+  function cycleSpeedMode() {
+    if (speedMultiplier === 1) {
+      speedMultiplier = 2;
+    } else if (speedMultiplier === 2) {
+      speedMultiplier = has4xAccess() ? 4 : 1;
+    } else {
+      speedMultiplier = 1;
+    }
+    setSpeedModeUI();
+  }
+
+  document.getElementById('speed-mode-btn').addEventListener('click', cycleSpeedMode);
+
   document.getElementById('start-btn').addEventListener('click', function() {
     startOverlay.classList.remove('active');
     resetRun();
@@ -3396,6 +3515,10 @@
       await uploadCloudProgress(nickname);
       statusEl.textContent = '新規登録しました: ' + nickname;
     }
+    if (speedMultiplier === 4 && !has4xAccess()) {
+      speedMultiplier = 2; // lost 4x eligibility with this nickname — fall back to 2x
+      setSpeedModeUI();
+    }
     refreshStartGate();
   });
 
@@ -3655,6 +3778,7 @@
   setMusicToggleUI();
   setSfxToggleUI();
   setAutoModeUI();
+  setSpeedModeUI();
   applyMobileMode();
   updateHUD();
   refreshStartGate();
