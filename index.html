@@ -621,7 +621,7 @@
       <div class="overlay active" id="start-overlay">
         <h1>SNARK RAID</h1>
         <div class="sub">敵を撃破してスナークを稼ぎ、深部を目指せ</div>
-        <div class="stat-row" id="start-instructions">PC: A/D 移動 ・ SPACE または 右クリックで攻撃</div>
+        <div class="stat-row" id="start-instructions">PC: A/D 左右移動・W/S 前後移動 ・ SPACE または 右クリックで攻撃</div>
 
         <div id="start-registered-row" style="display:none;">
           <div class="stat-row" style="color:var(--player-olive);">登録名: <span id="start-linked-name">-</span></div>
@@ -675,6 +675,14 @@
             <span class="shop-title">SETTINGS</span>
             <button id="close-settings-x">✕ 閉じる</button>
           </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">コントローラー</div>
+              <div class="setting-hint">PS4/PS5/Xbox等をBluetoothでペア設定後、いずれかのボタンを押すと認識します</div>
+            </div>
+            <span class="setting-hint" id="gamepad-status">未接続</span>
+          </div>
+
           <div class="setting-row">
             <div>
               <div class="setting-label">スマホ操作モード</div>
@@ -1688,9 +1696,11 @@
   }
 
   function resetRun() {
+    var baseY = H - 70;
     player = {
       x: W / 2,
-      y: H - 70,
+      y: baseY,
+      baseY: baseY,
       w: 26,
       h: 22,
       speed: 260,
@@ -1725,9 +1735,105 @@
   }
 
   // ============ Input ============
-  var input = { left: false, right: false, fire: false };
+  var input = { left: false, right: false, up: false, down: false, fire: false };
   var autoMode = false;
   var speedMultiplier = 1; // 1, 2, or 4 (4x is gated to a specific nickname)
+
+  // ---- Gamepad support (PS4/PS5/Xbox/generic, via the standard Web
+  // Gamepad API — works on PC, Android, and iOS 13+ once a controller is
+  // paired over Bluetooth). Polled every frame in update() rather than
+  // event-driven, since that's how the Gamepad API works; kept in its own
+  // object and OR'd together with keyboard/touch input at read time so no
+  // input source can accidentally cancel out another. ----
+  var gamepadInput = { left: false, right: false, up: false, down: false, fire: false };
+  var gamepadConnected = false;
+  var gamepadStartWasPressed = false;
+  var GAMEPAD_STICK_DEADZONE = 0.28;
+
+  window.addEventListener('gamepadconnected', function(e) {
+    gamepadConnected = true;
+    showToast('CONTROLLER CONNECTED');
+    updateGamepadStatusUI(e.gamepad);
+  });
+  window.addEventListener('gamepaddisconnected', function() {
+    // Only clear the flag if no other pad is still connected.
+    var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    gamepadConnected = false;
+    var stillConnected = null;
+    for (var i = 0; i < pads.length; i++) {
+      if (pads[i]) { gamepadConnected = true; stillConnected = pads[i]; break; }
+    }
+    gamepadInput.left = false;
+    gamepadInput.right = false;
+    gamepadInput.up = false;
+    gamepadInput.down = false;
+    gamepadInput.fire = false;
+    updateGamepadStatusUI(stillConnected);
+  });
+
+  function updateGamepadStatusUI(pad) {
+    var el = document.getElementById('gamepad-status');
+    if (!el) return;
+    if (pad) {
+      var label = (pad.id || 'コントローラー');
+      if (label.length > 28) label = label.slice(0, 28) + '…';
+      el.textContent = '接続中: ' + label;
+      el.style.color = 'var(--player-olive)';
+    } else {
+      el.textContent = '未接続';
+      el.style.color = '';
+    }
+  }
+
+  function pollGamepad() {
+    if (!navigator.getGamepads) return;
+    var pads = navigator.getGamepads();
+    var pad = null;
+    for (var i = 0; i < pads.length; i++) {
+      if (pads[i]) { pad = pads[i]; break; }
+    }
+    if (!pad) {
+      gamepadInput.left = false;
+      gamepadInput.right = false;
+      gamepadInput.up = false;
+      gamepadInput.down = false;
+      gamepadInput.fire = false;
+      return;
+    }
+
+    var axX = pad.axes[0] || 0;
+    var axY = pad.axes[1] || 0;
+
+    // D-pad (buttons 12-15 in the standard mapping) as a digital fallback
+    // for controllers/browsers that report it as buttons rather than axes.
+    var dpadUp = pad.buttons[12] && pad.buttons[12].pressed;
+    var dpadDown = pad.buttons[13] && pad.buttons[13].pressed;
+    var dpadLeft = pad.buttons[14] && pad.buttons[14].pressed;
+    var dpadRight = pad.buttons[15] && pad.buttons[15].pressed;
+
+    gamepadInput.left = axX < -GAMEPAD_STICK_DEADZONE || !!dpadLeft;
+    gamepadInput.right = axX > GAMEPAD_STICK_DEADZONE || !!dpadRight;
+    gamepadInput.up = axY < -GAMEPAD_STICK_DEADZONE || !!dpadUp;
+    gamepadInput.down = axY > GAMEPAD_STICK_DEADZONE || !!dpadDown;
+
+    // Fire on any face button, shoulder button, or trigger — covers
+    // PS (×/○/□/△, R1/R2), Xbox (A/B/X/Y, RB/RT), and most generic pads
+    // without needing the player to hunt for one specific button.
+    var fireButtons = [0, 1, 2, 3, 4, 5, 6, 7];
+    gamepadInput.fire = fireButtons.some(function(idx) {
+      var b = pad.buttons[idx];
+      return b && (typeof b === 'object' ? b.pressed : b > 0.5);
+    });
+
+    // Start/Options (button 9) toggles pause, on a press-edge so holding it
+    // doesn't rapidly flicker the pause menu open/closed.
+    var startPressed = pad.buttons[9] && pad.buttons[9].pressed;
+    if (startPressed && !gamepadStartWasPressed) {
+      if (gameState === STATE_PLAYING) openPauseMenu();
+      else if (gameState === STATE_PAUSED) closePauseMenu();
+    }
+    gamepadStartWasPressed = !!startPressed;
+  }
 
   window.addEventListener('keydown', function(e) {
     if (e.code === 'Escape') {
@@ -1753,11 +1859,15 @@
     if (gameState !== STATE_PLAYING) return;
     if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.left = true;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = true;
+    if (e.code === 'KeyW' || e.code === 'ArrowUp') input.up = true;
+    if (e.code === 'KeyS' || e.code === 'ArrowDown') input.down = true;
     if (e.code === 'Space') { input.fire = true; e.preventDefault(); }
   });
   window.addEventListener('keyup', function(e) {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.left = false;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = false;
+    if (e.code === 'KeyW' || e.code === 'ArrowUp') input.up = false;
+    if (e.code === 'KeyS' || e.code === 'ArrowDown') input.down = false;
     if (e.code === 'Space') input.fire = false;
   });
 
@@ -1820,6 +1930,8 @@
       stickVector.y = 0;
       input.left = false;
       input.right = false;
+      input.up = false;
+      input.down = false;
     }
 
     function updateFromClientPoint(clientX, clientY) {
@@ -1842,9 +1954,12 @@
         stickVector.y = Math.sin(angle) * normalized;
       }
 
-      // Only the x-axis drives movement for now (left/right only, as requested).
+      // Both axes now drive movement: x for left/right, y for the limited
+      // forward/back band (stick up = move up, stick down = move down).
       input.left = stickVector.x < -deadZone;
       input.right = stickVector.x > deadZone;
+      input.up = stickVector.y < -deadZone;
+      input.down = stickVector.y > deadZone;
     }
 
     function start(e) {
@@ -1897,7 +2012,7 @@
       document.getElementById('start-instructions').textContent = 'スマホ操作: 画面左側をタッチしてスティックで移動・FIREボタンで攻撃';
     } else {
       mobileControls.classList.remove('active');
-      document.getElementById('start-instructions').textContent = 'PC: A/D 移動 ・ SPACE または 右クリックで攻撃';
+      document.getElementById('start-instructions').textContent = 'PC: A/D 左右移動・W/S 前後移動 ・ SPACE または 右クリックで攻撃';
     }
   }
 
@@ -2043,7 +2158,7 @@
     targetId: null,        // reference to the currently-chased enemy/boss object
     targetLockTime: 0,     // how long we've been chasing this target
     dodgeCooldown: 0,      // brief pause after a dodge before re-evaluating
-    dodgeDir: 0,           // committed dodge direction (-1/0/1) while dodgeCooldown is active
+    dodgeDir: { x: 0, y: 0 }, // committed dodge direction (each -1/0/1) while dodgeCooldown is active
     reactionTimer: 0,      // small delay before reacting to new threats (avoids robotic instant response)
     fireHesitation: 0      // random micro-pause between shots so it doesn't machine-gun constantly
   };
@@ -2051,7 +2166,7 @@
   function resetAutoState() {
     autoState.targetId = null;
     autoState.targetLockTime = 0;
-    autoState.dodgeDir = 0;
+    autoState.dodgeDir = { x: 0, y: 0 };
     autoState.dodgeCooldown = 0;
     autoState.reactionTimer = 0;
     autoState.fireHesitation = 0;
@@ -2072,50 +2187,67 @@
   // ~0.7s. Used to evaluate several candidate dodge spots at once instead of
   // reacting to a single "nearest" bullet, which is what caused jittery
   // back-and-forth flinching when many bullets were on screen together.
-  function dangerScoreAt(x) {
+  // Danger score for a candidate (x, y) player position: sums up how close
+  // every incoming bullet will pass to that spot over the next ~0.7s. Takes
+  // the full 2D position (not just x) so the bot can also dodge by moving
+  // forward/back within its limited vertical band, not just side to side.
+  function dangerScoreAt(x, y) {
+    if (y === undefined) y = player.y;
     var danger = 0;
     for (var i = 0; i < enemyBullets.length; i++) {
       var eb = enemyBullets[i];
-      if (eb.vy <= 0) continue;
-      var timeToPlayerY = (player.y - eb.y) / eb.vy;
-      if (timeToPlayerY <= 0 || timeToPlayerY > 0.7) continue;
-      var futureX = eb.x + eb.vx * timeToPlayerY;
-      var dist = Math.abs(futureX - x);
-      var margin = player.w * 1.3;
+      var speed = Math.sqrt(eb.vx * eb.vx + eb.vy * eb.vy);
+      if (speed < 1) continue;
+      // Closest approach of the bullet's straight-line path to (x, y).
+      var toPointX = x - eb.x, toPointY = y - eb.y;
+      var t = (toPointX * eb.vx + toPointY * eb.vy) / (speed * speed);
+      if (t <= 0 || t > 0.7) continue; // already past, or too far in the future
+      var closestX = eb.x + eb.vx * t, closestY = eb.y + eb.vy * t;
+      var dist = Math.hypot(closestX - x, closestY - y);
+      var margin = Math.max(player.w, player.h) * 1.3;
       if (dist < margin) {
-        // Closer misses and sooner impacts are weighted as more dangerous.
-        danger += (1 - dist / margin) * (1 - timeToPlayerY / 0.7);
+        danger += (1 - dist / margin) * (1 - t / 0.7);
       }
     }
     return danger;
   }
 
-  // Scans a handful of candidate x-positions around the player (including
-  // staying put) and returns the direction toward the safest one, or null
-  // if the current spot is already safe enough that dodging isn't worth it.
+  // Scans candidate positions around the player — left/right and, within the
+  // player's limited forward/back band, up/down too — and returns a move
+  // direction {x, y} (each -1/0/1) toward the safest spot, or null if the
+  // current spot is already safe enough that dodging isn't worth it.
   function planSafestMove() {
-    var candidates = [-90, -50, -20, 0, 20, 50, 90];
     var minX = player.w / 2 + 6, maxX = W - player.w / 2 - 6;
-    var here = dangerScoreAt(player.x);
+    var minY = player.baseY - player.h * 3, maxY = player.baseY + player.h * 1;
+    var here = dangerScoreAt(player.x, player.y);
     if (here <= 0.05) return null; // current spot is already fine
 
     // Slight bonus for candidate spots that would also let us land a shot,
     // so when several escape routes are equally safe, the bot picks the one
     // that keeps it fighting instead of purely retreating.
-    function effectiveDanger(x) {
-      var d = dangerScoreAt(x);
+    function effectiveDanger(x, y) {
+      var d = dangerScoreAt(x, y);
       return wouldShotLandFrom(x) ? d - 0.06 : d;
     }
 
-    var bestX = player.x;
-    var bestDanger = effectiveDanger(player.x);
-    for (var i = 0; i < candidates.length; i++) {
-      var cx = Math.max(minX, Math.min(maxX, player.x + candidates[i]));
-      var d = effectiveDanger(cx);
-      if (d < bestDanger - 0.02) { bestDanger = d; bestX = cx; }
+    var xOffsets = [-90, -50, -20, 0, 20, 50, 90];
+    var yOffsets = [-44, -22, 0, 22]; // forward (toward enemies) weighted more since it's the larger band
+
+    var bestX = player.x, bestY = player.y;
+    var bestDanger = effectiveDanger(player.x, player.y);
+    for (var i = 0; i < xOffsets.length; i++) {
+      for (var j = 0; j < yOffsets.length; j++) {
+        var cx = Math.max(minX, Math.min(maxX, player.x + xOffsets[i]));
+        var cy = Math.max(minY, Math.min(maxY, player.y + yOffsets[j]));
+        var d = effectiveDanger(cx, cy);
+        if (d < bestDanger - 0.02) { bestDanger = d; bestX = cx; bestY = cy; }
+      }
     }
-    if (bestX === player.x) return null;
-    return bestX > player.x ? 1 : -1;
+    if (bestX === player.x && bestY === player.y) return null;
+    return {
+      x: bestX > player.x ? 1 : (bestX < player.x ? -1 : 0),
+      y: bestY > player.y ? 1 : (bestY < player.y ? -1 : 0)
+    };
   }
 
   // Scores a candidate target: easier/closer/more-aligned targets score higher.
@@ -2177,6 +2309,8 @@
   function applyAutoModeInput(dt) {
     input.left = false;
     input.right = false;
+    input.up = false;
+    input.down = false;
     input.fire = false;
 
     if (autoState.dodgeCooldown > 0) autoState.dodgeCooldown -= dt;
@@ -2184,22 +2318,27 @@
     if (autoState.fireHesitation > 0) autoState.fireHesitation -= dt;
 
     // --- 1. Dodge incoming bullets first; this always takes priority ---
-    // Evaluate the whole local danger map instead of reacting to a single
-    // nearest bullet — with many bullets on screen (dense barrages), picking
-    // just one caused rapid left/right flip-flopping. Committing to a
-    // direction for a short window also prevents jitter.
-    var dodgeDir = 0;
+    // Evaluate the whole local danger map (both x and y within the player's
+    // movement band) instead of reacting to a single nearest bullet — with
+    // many bullets on screen (dense barrages), picking just one caused rapid
+    // flip-flopping. Committing to a direction for a short window also
+    // prevents jitter, and using both axes means it can duck forward/back
+    // to dodge shots a pure left-right dodge couldn't avoid.
+    var dodge = { x: 0, y: 0 };
     if (autoState.dodgeCooldown > 0) {
-      dodgeDir = autoState.dodgeDir || 0;
+      dodge = autoState.dodgeDir || dodge;
     } else {
-      dodgeDir = planSafestMove() || 0;
-      if (dodgeDir !== 0) {
-        autoState.dodgeDir = dodgeDir;
+      var plan = planSafestMove();
+      if (plan) {
+        dodge = plan;
+        autoState.dodgeDir = plan;
         autoState.dodgeCooldown = 0.22; // brief commit to the chosen direction before reconsidering
       }
     }
-    if (dodgeDir > 0) input.right = true;
-    else if (dodgeDir < 0) input.left = true;
+    if (dodge.x > 0) input.right = true;
+    else if (dodge.x < 0) input.left = true;
+    if (dodge.y > 0) input.down = true;
+    else if (dodge.y < 0) input.up = true;
 
     // --- 2. Pick / retain a target, giving up on bad chases ---
     var target = null;
@@ -2291,16 +2430,36 @@
 
     if (autoMode) applyAutoModeInput(dt);
 
-    // player movement (horizontal only)
+    // While auto mode is driving, ignore live gamepad input so the two
+    // control sources can't fight over movement/fire — the AI has full control.
+    var padLeft = !autoMode && gamepadInput.left;
+    var padRight = !autoMode && gamepadInput.right;
+    var padUp = !autoMode && gamepadInput.up;
+    var padDown = !autoMode && gamepadInput.down;
+    var padFireHeld = !autoMode && gamepadInput.fire;
+
+    // player movement (horizontal + limited vertical range)
     var moveX = 0;
-    if (input.left) moveX -= 1;
-    if (input.right) moveX += 1;
+    if (input.left || padLeft) moveX -= 1;
+    if (input.right || padRight) moveX += 1;
     if (moveX !== 0 && player.prevMoveX === 0 && save.upgrades.dashInvuln && player.invuln <= 0) {
       player.invuln = 0.15;
     }
     player.prevMoveX = moveX;
     player.x += moveX * player.speed * playerMoveSpeedMult() * dt;
     player.x = Math.max(player.w/2 + 6, Math.min(W - player.w/2 - 6, player.x));
+
+    // Vertical movement is limited to a small band around the player's base
+    // row: up to 3 hull-heights forward (up), 1 hull-height back (down).
+    var moveY = 0;
+    if (input.up || padUp) moveY -= 1;
+    if (input.down || padDown) moveY += 1;
+    if (moveY !== 0) {
+      player.y += moveY * player.speed * playerMoveSpeedMult() * dt;
+    }
+    var upLimit = player.baseY - player.h * 3;
+    var downLimit = player.baseY + player.h * 1;
+    player.y = Math.max(upLimit, Math.min(downLimit, player.y));
 
     // fire
     player.fireTimer -= dt;
@@ -2309,7 +2468,7 @@
     if (player.surgeTimer > 0 && save.upgrades.fireRateSurge) {
       fireInterval *= (1 - 0.15 * save.upgrades.fireRateSurge);
     }
-    if (input.fire && player.fireTimer <= 0) {
+    if ((input.fire || padFireHeld) && player.fireTimer <= 0) {
       fireBullet();
       player.fireTimer = fireInterval;
     }
@@ -3038,6 +3197,8 @@
     var dt = (ts - lastTime) / 1000;
     lastTime = ts;
 
+    pollGamepad(); // polled every frame regardless of game state, so Start can pause/resume too
+
     if (gameState === STATE_PLAYING) {
       update(dt);
       if (gameState === STATE_PLAYING) updateHUD();
@@ -3112,6 +3273,8 @@
     if (!autoMode) {
       input.left = false;
       input.right = false;
+      input.up = false;
+      input.down = false;
       input.fire = false;
     }
   }
@@ -3456,6 +3619,12 @@
   function openSettings() {
     openPanelOverlay('settings-overlay');
     refreshLinkUI();
+    var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    var connectedPad = null;
+    for (var i = 0; i < pads.length; i++) {
+      if (pads[i]) { connectedPad = pads[i]; break; }
+    }
+    updateGamepadStatusUI(connectedPad);
   }
   document.getElementById('open-settings').addEventListener('click', openSettings);
   document.getElementById('close-settings-x').addEventListener('click', function() {
