@@ -108,6 +108,21 @@
     transition: width 0.15s steps(6);
   }
 
+  #pause-exp-bar-outer {
+    width: 100%;
+    height: 12px;
+    background: #211d16;
+    border: 2px solid var(--player-olive-dim);
+    margin-top: 4px;
+    image-rendering: pixelated;
+  }
+  #pause-exp-bar-inner {
+    height: 100%;
+    background: var(--player-olive);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+
   #hud-right {
     display: flex;
     gap: 5px;
@@ -484,6 +499,31 @@
   }
   .wardrobe-cell .lock-icon { font-size: 20px; }
 
+  #weapon-grid { display: flex; flex-direction: column; gap: 8px; }
+  .weapon-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-panel-edge);
+    border: 2px solid var(--line-dim);
+    cursor: pointer;
+  }
+  .weapon-row.equipped { border-color: var(--player-olive); box-shadow: 0 0 8px rgba(155,184,98,0.4); }
+  .weapon-row.locked { cursor: default; opacity: 0.45; }
+  .weapon-row .weapon-icon { font-size: 22px; width: 30px; text-align: center; }
+  .weapon-row .weapon-info { flex: 1; text-align: left; }
+  .weapon-row .weapon-name { font-size: 15px; }
+  .weapon-row .weapon-hint { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .weapon-row .weapon-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 1px solid var(--line-dim);
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .weapon-row.equipped .weapon-badge { color: var(--player-olive); border-color: var(--player-olive); }
+
   .paint-lock-row {
     display: flex;
     justify-content: space-between;
@@ -640,6 +680,9 @@
         <div class="sub">作戦を一時中断中</div>
         <div class="stat-row">現在ステージ: <span class="v" id="pause-stage">01</span></div>
         <div class="stat-row">出撃中スナーク: <span class="v" id="pause-snark">0</span></div>
+        <div class="stat-row">パイロットLv: <span class="v" id="pause-level">1</span></div>
+        <div id="pause-exp-bar-outer"><div id="pause-exp-bar-inner"></div></div>
+        <div class="setting-hint" id="pause-exp-text" style="margin-bottom:8px;">0 / 50 EXP</div>
         <button class="btn-secondary" id="pause-auto-toggle-btn">AUTOモード: OFF</button>
         <button class="btn-secondary" id="pause-speed-btn">速度: ×1</button>
         <button class="btn-primary" id="resume-btn">作戦を再開する</button>
@@ -818,6 +861,7 @@
           <div class="hangar-tabs">
             <button class="hangar-tab active" id="tab-gacha" data-tab="gacha">ガチャ</button>
             <button class="hangar-tab" id="tab-wardrobe" data-tab="wardrobe">きせかえ</button>
+            <button class="hangar-tab" id="tab-weapons" data-tab="weapons">武器</button>
           </div>
 
           <div id="hangar-panel-gacha" class="hangar-panel">
@@ -841,6 +885,11 @@
               </div>
               <button class="btn-secondary" id="paint-lock-btn" disabled>近日対応</button>
             </div>
+          </div>
+
+          <div id="hangar-panel-weapons" class="hangar-panel" style="display:none;">
+            <div class="setting-hint" style="margin-bottom:10px;">レベルが上がると新しい武器が解放されます。使う武器を選んでください。</div>
+            <div id="weapon-grid"></div>
           </div>
         </div>
       </div>
@@ -1146,13 +1195,68 @@
     linkedNickname: '',
     musicMuted: false,
     sfxMuted: false,
-    gachaRollCount: 0
+    gachaRollCount: 0,
+    playerLevel: 1,
+    playerExp: 0,
+    equippedWeapon: 'laser'
   };
   var save = loadSave() || JSON.parse(JSON.stringify(defaultSave));
 
   function persist() { writeSave(save); }
 
-  // ============ Upgrade definitions ============
+  // ============ Player level system ============
+  var MAX_PLAYER_LEVEL = 50;
+
+  function expForLevel(lvl) {
+    // EXP required to go from `lvl` to `lvl + 1`. Tuned so reaching level 50
+    // through normal play takes roughly 2-3 months.
+    return Math.round(50 * Math.pow(1.14, lvl - 1));
+  }
+
+  // Per-level passive bonuses: small stat growth plus a shop discount,
+  // both scaling gently so the effect is felt but never dominates upgrades.
+  function levelStatMult() {
+    return 1 + (save.playerLevel - 1) * 0.012; // +1.2% per level, ~+59% at lvl 50
+  }
+  function levelShopDiscount() {
+    return Math.min(0.25, (save.playerLevel - 1) * 0.005); // up to 25% off at lvl 50
+  }
+
+  var WEAPON_UNLOCK_LEVELS = { laser: 1, missile: 10, shotgun: 20, railgun: 30, plasma: 40, gravity: 50 };
+  var WEAPON_UNLOCK_LEVELS_REVERSE = { 10: 'ミサイル', 20: 'ショットガン', 30: 'レールガン', 40: 'プラズマ球', 50: '重力弾' };
+
+  var WEAPON_DEFS = {
+    laser:   { name: 'レーザー',     icon: '⚡', color: '#9bb862', fireIntervalMult: 1.0 },
+    missile: { name: 'ミサイル',     icon: '🚀', color: '#d9863f', fireIntervalMult: 1.7 },
+    shotgun: { name: 'ショットガン', icon: '💥', color: '#c9a84c', fireIntervalMult: 1.4 },
+    railgun: { name: 'レールガン',   icon: '➰', color: '#5fc9e8', fireIntervalMult: 2.2 },
+    plasma:  { name: 'プラズマ球',   icon: '🔮', color: '#c97dd9', fireIntervalMult: 1.9 },
+    gravity: { name: '重力弾',       icon: '🌀', color: '#7d5fd9', fireIntervalMult: 2.4 }
+  };
+
+  function isWeaponUnlocked(key) {
+    return save.playerLevel >= (WEAPON_UNLOCK_LEVELS[key] || 999);
+  }
+
+  function grantPlayerExp(amount) {
+    if (save.playerLevel >= MAX_PLAYER_LEVEL) return;
+    save.playerExp += amount;
+    var leveledUp = false;
+    while (save.playerLevel < MAX_PLAYER_LEVEL && save.playerExp >= expForLevel(save.playerLevel)) {
+      save.playerExp -= expForLevel(save.playerLevel);
+      save.playerLevel++;
+      leveledUp = true;
+      if (WEAPON_UNLOCK_LEVELS_REVERSE[save.playerLevel]) {
+        showToast('LEVEL ' + save.playerLevel + '! ' + WEAPON_UNLOCK_LEVELS_REVERSE[save.playerLevel] + ' 解放');
+      } else {
+        showToast('LEVEL UP! Lv.' + save.playerLevel);
+      }
+    }
+    if (save.playerLevel >= MAX_PLAYER_LEVEL) save.playerExp = 0;
+    if (leveledUp) persist();
+  }
+
+
   var UPGRADES = {
     damage: {
       name: "パルスキャノン強化",
@@ -1421,7 +1525,8 @@
   function upgradeCost(key) {
     var u = UPGRADES[key];
     var lvl = save.upgrades[key] || 0;
-    return Math.round(u.baseCost * Math.pow(u.costMult, lvl));
+    var base = u.baseCost * Math.pow(u.costMult, lvl);
+    return Math.round(base * (1 - levelShopDiscount()));
   }
 
   // ============ Skins & gacha ============
@@ -1518,6 +1623,9 @@
     if (typeof save.musicMuted !== 'boolean') save.musicMuted = false;
     if (typeof save.sfxMuted !== 'boolean') save.sfxMuted = false;
     if (typeof save.gachaRollCount !== 'number') save.gachaRollCount = 0;
+    if (typeof save.playerLevel !== 'number') save.playerLevel = 1;
+    if (typeof save.playerExp !== 'number') save.playerExp = 0;
+    if (typeof save.equippedWeapon !== 'string') save.equippedWeapon = 'laser';
     UPGRADE_KEYS.forEach(function(key) {
       if (typeof save.upgrades[key] !== 'number') save.upgrades[key] = 0;
     });
@@ -1622,10 +1730,10 @@
   var reviveUsed = false;
 
   function playerMaxHP() {
-    return UPGRADES.hull.apply(save.upgrades.hull || 0) + UPGRADES.hullPlate2.apply(save.upgrades.hullPlate2 || 0);
+    return (UPGRADES.hull.apply(save.upgrades.hull || 0) + UPGRADES.hullPlate2.apply(save.upgrades.hullPlate2 || 0)) * levelStatMult();
   }
   function playerDamageMult() {
-    return UPGRADES.damage.apply(save.upgrades.damage || 0);
+    return UPGRADES.damage.apply(save.upgrades.damage || 0) * levelStatMult();
   }
   function playerFireInterval() {
     var base = 0.28 * UPGRADES.firerate.apply(save.upgrades.firerate || 0);
@@ -2075,6 +2183,16 @@
   }
 
   function fireBullet() {
+    var weapon = isWeaponUnlocked(save.equippedWeapon) ? save.equippedWeapon : 'laser';
+    if (weapon === 'missile') { fireMissile(); return; }
+    if (weapon === 'shotgun') { fireShotgun(); return; }
+    if (weapon === 'railgun') { fireRailgun(); return; }
+    if (weapon === 'plasma') { firePlasma(); return; }
+    if (weapon === 'gravity') { fireGravity(); return; }
+    fireLaser();
+  }
+
+  function fireLaser() {
     var sideShots = playerSideShots();
     var isCrit = Math.random() < playerCritChance();
     var dmg = 6 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
@@ -2084,13 +2202,87 @@
     var angleReduction = playerSideAngleReduction();
     var sideVx = Math.max(15, 60 - angleReduction * 60);
     var by = player.y - player.h/2;
-    var mainColor = isCrit ? '#d9863f' : null;
 
-    bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: 0, vy: -420 * speedMult, dmg: dmg, r: 4 + radiusBonus, pierceLeft: pierce, crit: isCrit });
+    bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: 0, vy: -420 * speedMult, dmg: dmg, r: 4 + radiusBonus, pierceLeft: pierce, crit: isCrit, weapon: 'laser' });
     for (var i = 1; i <= sideShots; i++) {
-      bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: sideVx * i, vy: -400 * speedMult, dmg: dmg * 0.8, r: 3 + radiusBonus, pierceLeft: pierce, crit: isCrit });
-      bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: -sideVx * i, vy: -400 * speedMult, dmg: dmg * 0.8, r: 3 + radiusBonus, pierceLeft: pierce, crit: isCrit });
+      bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: sideVx * i, vy: -400 * speedMult, dmg: dmg * 0.8, r: 3 + radiusBonus, pierceLeft: pierce, crit: isCrit, weapon: 'laser' });
+      bullets.push({ x: player.x, y: by, prevX: player.x, prevY: by, vx: -sideVx * i, vy: -400 * speedMult, dmg: dmg * 0.8, r: 3 + radiusBonus, pierceLeft: pierce, crit: isCrit, weapon: 'laser' });
     }
+    playSfx('shoot');
+  }
+
+  function fireMissile() {
+    // Slow-turning homing shot; hits hard to compensate for its long reload.
+    var isCrit = Math.random() < playerCritChance();
+    var dmg = 16 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var by = player.y - player.h/2;
+    bullets.push({
+      x: player.x, y: by, prevX: player.x, prevY: by,
+      vx: 0, vy: -260 * playerBulletSpeedMult(),
+      dmg: dmg, r: 5, pierceLeft: 0, crit: isCrit, weapon: 'missile',
+      homingTargetId: null, turnRate: 3.2
+    });
+    playSfx('shoot');
+  }
+
+  function fireShotgun() {
+    // Wide short-range spread; each pellet is weaker but they stack up close.
+    var isCrit = Math.random() < playerCritChance();
+    var baseDmg = 5 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var by = player.y - player.h/2;
+    var pelletCount = 5 + playerSideShots();
+    var spreadAngle = 0.55; // total cone width in radians
+    for (var i = 0; i < pelletCount; i++) {
+      var t = pelletCount === 1 ? 0.5 : i / (pelletCount - 1);
+      var angle = -Math.PI / 2 + (t - 0.5) * spreadAngle;
+      var speed = 440 * playerBulletSpeedMult();
+      bullets.push({
+        x: player.x, y: by, prevX: player.x, prevY: by,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        dmg: baseDmg, r: 3, pierceLeft: 0, crit: isCrit, weapon: 'shotgun'
+      });
+    }
+    playSfx('shoot');
+  }
+
+  function fireRailgun() {
+    // A single very thick, fully piercing beam-like bolt.
+    var isCrit = Math.random() < playerCritChance();
+    var dmg = 26 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var by = player.y - player.h/2;
+    bullets.push({
+      x: player.x, y: by, prevX: player.x, prevY: by,
+      vx: 0, vy: -620 * playerBulletSpeedMult(),
+      dmg: dmg, r: 9, pierceLeft: 999, crit: isCrit, weapon: 'railgun'
+    });
+    playSfx('shoot');
+  }
+
+  function firePlasma() {
+    // Slow orb that explodes in a radius on impact or at max range.
+    var isCrit = Math.random() < playerCritChance();
+    var dmg = 14 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var by = player.y - player.h/2;
+    bullets.push({
+      x: player.x, y: by, prevX: player.x, prevY: by,
+      vx: 0, vy: -230 * playerBulletSpeedMult(),
+      dmg: dmg, r: 7, pierceLeft: 0, crit: isCrit, weapon: 'plasma',
+      explodeRadius: 60
+    });
+    playSfx('shoot');
+  }
+
+  function fireGravity() {
+    // Slow orb that pulls nearby enemies toward its path as it travels.
+    var isCrit = Math.random() < playerCritChance();
+    var dmg = 10 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var by = player.y - player.h/2;
+    bullets.push({
+      x: player.x, y: by, prevX: player.x, prevY: by,
+      vx: 0, vy: -190 * playerBulletSpeedMult(),
+      dmg: dmg, r: 8, pierceLeft: 999, crit: isCrit, weapon: 'gravity',
+      pullRadius: 90
+    });
     playSfx('shoot');
   }
 
@@ -2464,7 +2656,8 @@
     // fire
     player.fireTimer -= dt;
     if (player.surgeTimer > 0) player.surgeTimer -= dt;
-    var fireInterval = playerFireInterval();
+    var equippedWeaponKey = isWeaponUnlocked(save.equippedWeapon) ? save.equippedWeapon : 'laser';
+    var fireInterval = playerFireInterval() * (WEAPON_DEFS[equippedWeaponKey].fireIntervalMult || 1);
     if (player.surgeTimer > 0 && save.upgrades.fireRateSurge) {
       fireInterval *= (1 - 0.15 * save.upgrades.fireRateSurge);
     }
@@ -2490,6 +2683,46 @@
       var b = bullets[i];
       b.prevX = b.x;
       b.prevY = b.y;
+
+      if (b.weapon === 'missile') {
+        // Steer gently toward the nearest live enemy each frame.
+        var homingTarget = null, homingBestDist = Infinity;
+        for (var hi = 0; hi < enemies.length; hi++) {
+          var hen = enemies[hi];
+          if (hen.type === 'phantom' && hen.phased) continue;
+          var hd = Math.hypot(hen.x - b.x, hen.y - b.y);
+          if (hd < homingBestDist) { homingBestDist = hd; homingTarget = hen; }
+        }
+        if (bossActive && boss) {
+          var bd = Math.hypot(boss.x - b.x, boss.y - b.y);
+          if (bd < homingBestDist) homingTarget = boss;
+        }
+        if (homingTarget) {
+          var desiredAng = Math.atan2(homingTarget.y - b.y, homingTarget.x - b.x);
+          var curAng = Math.atan2(b.vy, b.vx);
+          var speedMag = Math.hypot(b.vx, b.vy);
+          var angDiff = ((desiredAng - curAng + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+          var maxTurn = b.turnRate * dt;
+          curAng += Math.max(-maxTurn, Math.min(maxTurn, angDiff));
+          b.vx = Math.cos(curAng) * speedMag;
+          b.vy = Math.sin(curAng) * speedMag;
+        }
+      }
+
+      if (b.weapon === 'gravity' && b.pullRadius) {
+        // Pull nearby enemies gently toward the bolt's path as it flies by.
+        for (var gi = 0; gi < enemies.length; gi++) {
+          var gen = enemies[gi];
+          var gdx = b.x - gen.x, gdy = b.y - gen.y;
+          var gdist = Math.hypot(gdx, gdy);
+          if (gdist > 0 && gdist < b.pullRadius) {
+            var pull = (1 - gdist / b.pullRadius) * 90 * dt;
+            gen.x += (gdx / gdist) * pull;
+            gen.y += (gdy / gdist) * pull * 0.3;
+          }
+        }
+      }
+
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       if (b.y < -20 || b.x < -20 || b.x > W + 20) bullets.splice(i, 1);
@@ -2641,6 +2874,27 @@
           }
 
           en.hp -= dmg;
+
+          // Plasma splash: damage nearby enemies too, without touching the
+          // enemies array itself (no splice here) so the outer loop we're
+          // inside stays safe — any enemy this kills gets cleaned up on its
+          // own turn through the normal loop next frame.
+          if (b.weapon === 'plasma' && b.explodeRadius) {
+            spawnParticles(b.x, b.y, '#c97dd9', 14);
+            for (var pi = 0; pi < enemies.length; pi++) {
+              var pen = enemies[pi];
+              if (pen === en) continue;
+              var pdist = Math.hypot(pen.x - b.x, pen.y - b.y);
+              if (pdist < b.explodeRadius) {
+                pen.hp -= dmg * 0.6;
+              }
+            }
+            if (bossActive && boss) {
+              var pbdist = Math.hypot(boss.x - b.x, boss.y - b.y);
+              if (pbdist < b.explodeRadius) boss.hp -= dmg * 0.6 * (1 - boss.armorPct);
+            }
+          }
+
           if (en.hp <= 0) {
             spawnParticles(en.x, en.y, '#c9a84c', 18);
             playSfx('kill');
@@ -2652,6 +2906,7 @@
             playSfx('snark');
             snarkThisRun += amount;
             killStreak++;
+            grantPlayerExp(2);
             var repairChance = playerRepairChance();
             if (repairChance > 0 && Math.random() < repairChance && player.hp < player.maxHp) {
               player.hp = Math.min(player.maxHp, player.hp + 4);
@@ -2687,11 +2942,14 @@
         var rewardAmount = Math.round(bossReward * playerDropMult());
         spawnSnarkPop(boss.x, boss.y, rewardAmount);
         snarkThisRun += rewardAmount;
+        var expBeforeBoss = save.playerLevel;
+        grantPlayerExp(100 + boss.tier * 20);
+        var leveledUpFromBoss = save.playerLevel !== expBeforeBoss;
         updateHUD();
         bossActive = false;
         boss = null;
         stage++;
-        showToast('BOSS DEFEATED — STAGE ' + pad2(stage));
+        if (!leveledUpFromBoss) showToast('BOSS DEFEATED — STAGE ' + pad2(stage));
         applyZoneVisuals();
         updateHUD();
       }
@@ -2756,6 +3014,9 @@
       enemiesKilledThisStage = 0;
       stage++;
       var zoneChanged = currentZone().name !== activeZoneName;
+      var expBefore = save.playerLevel;
+      grantPlayerExp(15);
+      var leveledUpThisClear = save.playerLevel !== expBefore;
       if (isBossStage(stage)) {
         // Defer clearing the enemies/bullets arrays until the current
         // enemy-loop iteration in update() has finished, since mutating
@@ -2767,9 +3028,11 @@
       } else if (zoneChanged) {
         applyZoneVisuals(); // shows its own "ZONE: ..." toast
         playSfx('stageClear');
-      } else {
+      } else if (!leveledUpThisClear) {
         showToast('STAGE ' + pad2(stage));
         playSfx('stageClear');
+      } else {
+        playSfx('stageClear'); // level-up toast already shown by grantPlayerExp
       }
       updateHUD();
     }
@@ -3131,7 +3394,8 @@
     if (gameState === STATE_PLAYING || gameState === STATE_PAUSED) {
       for (var i = 0; i < bullets.length; i++) {
         var b = bullets[i];
-        ctx.fillStyle = b.crit ? '#d9863f' : '#9bb862';
+        var weaponColor = (WEAPON_DEFS[b.weapon] && WEAPON_DEFS[b.weapon].color) || '#9bb862';
+        ctx.fillStyle = b.crit ? '#d9863f' : weaponColor;
         ctx.beginPath();
         ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
         ctx.fill();
@@ -3232,6 +3496,13 @@
     gameState = STATE_PAUSED;
     document.getElementById('pause-stage').textContent = pad2(stage);
     document.getElementById('pause-snark').textContent = snarkThisRun;
+    document.getElementById('pause-level').textContent = save.playerLevel;
+    var expNeeded = save.playerLevel >= MAX_PLAYER_LEVEL ? 0 : expForLevel(save.playerLevel);
+    var expPct = expNeeded > 0 ? Math.min(100, (save.playerExp / expNeeded) * 100) : 100;
+    document.getElementById('pause-exp-bar-inner').style.width = expPct + '%';
+    document.getElementById('pause-exp-text').textContent = save.playerLevel >= MAX_PLAYER_LEVEL
+      ? 'MAX LEVEL'
+      : (save.playerExp + ' / ' + expNeeded + ' EXP');
     pauseOverlay.classList.add('active');
   }
 
@@ -3479,12 +3750,54 @@
   function switchHangarTab(tab) {
     document.getElementById('tab-gacha').classList.toggle('active', tab === 'gacha');
     document.getElementById('tab-wardrobe').classList.toggle('active', tab === 'wardrobe');
+    document.getElementById('tab-weapons').classList.toggle('active', tab === 'weapons');
     document.getElementById('hangar-panel-gacha').style.display = tab === 'gacha' ? 'block' : 'none';
     document.getElementById('hangar-panel-wardrobe').style.display = tab === 'wardrobe' ? 'block' : 'none';
+    document.getElementById('hangar-panel-weapons').style.display = tab === 'weapons' ? 'block' : 'none';
     if (tab === 'wardrobe') renderWardrobe();
+    if (tab === 'weapons') renderWeaponGrid();
   }
   document.getElementById('tab-gacha').addEventListener('click', function() { switchHangarTab('gacha'); });
   document.getElementById('tab-wardrobe').addEventListener('click', function() { switchHangarTab('wardrobe'); });
+  document.getElementById('tab-weapons').addEventListener('click', function() { switchHangarTab('weapons'); });
+
+  function renderWeaponGrid() {
+    var grid = document.getElementById('weapon-grid');
+    grid.innerHTML = '';
+    Object.keys(WEAPON_DEFS).forEach(function(key) {
+      var def = WEAPON_DEFS[key];
+      var unlocked = isWeaponUnlocked(key);
+      var equipped = save.equippedWeapon === key;
+      var row = document.createElement('div');
+      row.className = 'weapon-row' + (equipped ? ' equipped' : '') + (unlocked ? '' : ' locked');
+
+      var icon = document.createElement('div');
+      icon.className = 'weapon-icon';
+      icon.textContent = unlocked ? def.icon : '🔒';
+      row.appendChild(icon);
+
+      var info = document.createElement('div');
+      info.className = 'weapon-info';
+      var reqLevel = WEAPON_UNLOCK_LEVELS[key];
+      info.innerHTML = '<div class="weapon-name">' + def.name + '</div>' +
+        '<div class="weapon-hint">' + (unlocked ? '装備するとこの武器で出撃します' : 'Lv.' + reqLevel + ' で解放') + '</div>';
+      row.appendChild(info);
+
+      var badge = document.createElement('div');
+      badge.className = 'weapon-badge';
+      badge.textContent = equipped ? '装備中' : (unlocked ? '選択' : 'LOCK');
+      row.appendChild(badge);
+
+      if (unlocked && !equipped) {
+        row.addEventListener('click', function() {
+          save.equippedWeapon = key;
+          persist();
+          renderWeaponGrid();
+        });
+      }
+      grid.appendChild(row);
+    });
+  }
 
   function openHangar() {
     renderHangarSnark();
@@ -3659,6 +3972,9 @@
       skins: save.skins,
       equippedSkin: save.equippedSkin,
       gachaRollCount: save.gachaRollCount,
+      playerLevel: save.playerLevel,
+      playerExp: save.playerExp,
+      equippedWeapon: save.equippedWeapon,
       ts: Date.now()
     };
   }
@@ -3670,6 +3986,9 @@
     if (Array.isArray(progress.skins)) save.skins = progress.skins;
     if (progress.equippedSkin) save.equippedSkin = progress.equippedSkin;
     if (typeof progress.gachaRollCount === 'number') save.gachaRollCount = progress.gachaRollCount;
+    if (typeof progress.playerLevel === 'number') save.playerLevel = progress.playerLevel;
+    if (typeof progress.playerExp === 'number') save.playerExp = progress.playerExp;
+    if (typeof progress.equippedWeapon === 'string') save.equippedWeapon = progress.equippedWeapon;
     ensureSaveShape();
   }
 
