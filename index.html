@@ -94,7 +94,7 @@
   .hud-value.hp { color: var(--danger-rust); text-shadow: 0 0 6px rgba(181,98,47,0.5); }
 
   #hp-bar-outer {
-    width: 72px;
+    width: 54px;
     height: 10px;
     background: #211d16;
     border: 2px solid var(--danger-rust-dim);
@@ -117,6 +117,21 @@
     image-rendering: pixelated;
   }
   #pause-exp-bar-inner {
+    height: 100%;
+    background: var(--player-olive);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+
+  #exp-bar-outer {
+    width: 54px;
+    height: 10px;
+    background: #211d16;
+    border: 2px solid var(--player-olive-dim);
+    margin-top: 2px;
+    image-rendering: pixelated;
+  }
+  #exp-bar-inner {
     height: 100%;
     background: var(--player-olive);
     width: 0%;
@@ -622,6 +637,10 @@
         <div class="hud-block">
           <span class="hud-label">STAGE</span>
           <span class="hud-value stage" id="stage-val">01</span>
+        </div>
+        <div class="hud-block">
+          <span class="hud-label">LV <span id="level-val">1</span></span>
+          <div id="exp-bar-outer"><div id="exp-bar-inner"></div></div>
         </div>
         <div class="hud-block">
           <span class="hud-label">HULL</span>
@@ -1238,6 +1257,18 @@
     return save.playerLevel >= (WEAPON_UNLOCK_LEVELS[key] || 999);
   }
 
+  var WEAPON_RELOAD_UPGRADE_KEY = {
+    missile: 'missileReload',
+    railgun: 'railgunReload',
+    plasma: 'plasmaReload',
+    gravity: 'gravityReload'
+  };
+  function weaponReloadMultiplier(weaponKey) {
+    var upgradeKey = WEAPON_RELOAD_UPGRADE_KEY[weaponKey];
+    if (!upgradeKey) return 1;
+    return UPGRADES[upgradeKey].apply(save.upgrades[upgradeKey] || 0);
+  }
+
   function grantPlayerExp(amount) {
     if (save.playerLevel >= MAX_PLAYER_LEVEL) return;
     save.playerExp += amount;
@@ -1505,6 +1536,166 @@
       costMult: 1.5,
       maxLevel: 1,
       apply: function(lvl) { return lvl; }
+    },
+
+    // ---- Missile-exclusive upgrades ----
+    missileSpeed: {
+      name: "旋回制御ユニット",
+      desc: "ミサイルの旋回速度が上がる",
+      baseCost: 95, costMult: 1.7, maxLevel: 3,
+      apply: function(lvl) { return lvl * 1.1; } // added to turnRate
+    },
+    missileDamage: {
+      name: "重弾頭コア",
+      desc: "ミサイルの威力が上がる",
+      baseCost: 100, costMult: 1.8, maxLevel: 3,
+      apply: function(lvl) { return 1 + lvl * 0.3; }
+    },
+    missileCount: {
+      name: "マルチランチャー",
+      desc: "ミサイルの同時発射数が増える",
+      baseCost: 140, costMult: 2.2, maxLevel: 2,
+      apply: function(lvl) { return lvl; } // extra missiles per shot
+    },
+    missileBlast: {
+      name: "着弾爆散装置",
+      desc: "ミサイルが着弾時に小さく爆発するようになる",
+      baseCost: 120, costMult: 2.0, maxLevel: 2,
+      apply: function(lvl) { return lvl * 22; } // blast radius px
+    },
+    missileReload: {
+      name: "急速再装填リグ",
+      desc: "ミサイルの連射間隔が短くなる",
+      baseCost: 105, costMult: 1.8, maxLevel: 3,
+      apply: function(lvl) { return Math.max(0.6, 1 - lvl * 0.12); }
+    },
+
+    // ---- Shotgun-exclusive upgrades ----
+    shotgunPellets: {
+      name: "追加バレル",
+      desc: "ショットガンの弾数が増える",
+      baseCost: 100, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return lvl * 2; } // extra pellets
+    },
+    shotgunSpread: {
+      name: "集束チョーク",
+      desc: "拡散角度が狭まり弾がまとまりやすくなる",
+      baseCost: 95, costMult: 1.7, maxLevel: 3,
+      apply: function(lvl) { return lvl * 0.1; } // fraction narrower
+    },
+    shotgunDamage: {
+      name: "高圧装薬",
+      desc: "ショットガンの1発あたりの威力が上がる",
+      baseCost: 105, costMult: 1.8, maxLevel: 3,
+      apply: function(lvl) { return 1 + lvl * 0.25; }
+    },
+    shotgunRange: {
+      name: "加速バレルライナー",
+      desc: "弾速が上がり実質的な射程が伸びる",
+      baseCost: 90, costMult: 1.6, maxLevel: 3,
+      apply: function(lvl) { return 1 + lvl * 0.15; }
+    },
+    shotgunPierce: {
+      name: "徹甲ペレット",
+      desc: "ショットガンの弾が貫通するようになる",
+      baseCost: 150, costMult: 2.3, maxLevel: 1,
+      apply: function(lvl) { return lvl; }
+    },
+
+    // ---- Railgun-exclusive upgrades ----
+    railgunDamage: {
+      name: "超伝導コイル",
+      desc: "レールガンの威力が上がる",
+      baseCost: 110, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return 1 + lvl * 0.35; }
+    },
+    railgunWidth: {
+      name: "拡張エミッタ",
+      desc: "ビームの太さ（判定幅）が広がる",
+      baseCost: 100, costMult: 1.8, maxLevel: 3,
+      apply: function(lvl) { return lvl * 2; } // added to bullet radius
+    },
+    railgunReload: {
+      name: "コンデンサバンク",
+      desc: "レールガンの連射間隔が短くなる",
+      baseCost: 115, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return Math.max(0.55, 1 - lvl * 0.13); }
+    },
+    railgunSpeed: {
+      name: "加速レール延長",
+      desc: "弾速がさらに上がる",
+      baseCost: 90, costMult: 1.6, maxLevel: 2,
+      apply: function(lvl) { return 1 + lvl * 0.2; }
+    },
+    railgunCrit: {
+      name: "精密照準スコープ",
+      desc: "レールガン限定でクリティカル率が上がる",
+      baseCost: 130, costMult: 2.0, maxLevel: 2,
+      apply: function(lvl) { return lvl * 0.12; }
+    },
+
+    // ---- Plasma-exclusive upgrades ----
+    plasmaRadius: {
+      name: "拡散フィールド生成器",
+      desc: "プラズマ球の爆発範囲が広がる",
+      baseCost: 105, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return lvl * 14; } // added to explodeRadius
+    },
+    plasmaDamage: {
+      name: "高密度プラズマコア",
+      desc: "プラズマ球の威力が上がる",
+      baseCost: 110, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return 1 + lvl * 0.3; }
+    },
+    plasmaSplashDamage: {
+      name: "衝撃波増幅器",
+      desc: "爆発の周辺ダメージ割合が増える",
+      baseCost: 120, costMult: 2.0, maxLevel: 2,
+      apply: function(lvl) { return lvl * 0.15; } // added to splash multiplier
+    },
+    plasmaReload: {
+      name: "冷却強化ユニット",
+      desc: "プラズマ球の連射間隔が短くなる",
+      baseCost: 100, costMult: 1.8, maxLevel: 3,
+      apply: function(lvl) { return Math.max(0.6, 1 - lvl * 0.12); }
+    },
+    plasmaSpeed: {
+      name: "推進ブースター",
+      desc: "プラズマ球の弾速が上がる",
+      baseCost: 90, costMult: 1.6, maxLevel: 2,
+      apply: function(lvl) { return 1 + lvl * 0.2; }
+    },
+
+    // ---- Gravity-exclusive upgrades ----
+    gravityPull: {
+      name: "拡張重力場",
+      desc: "重力弾の引き寄せ範囲が広がる",
+      baseCost: 105, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return lvl * 18; } // added to pullRadius
+    },
+    gravityPullForce: {
+      name: "重力子増幅コイル",
+      desc: "引き寄せる力が強くなる",
+      baseCost: 110, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return lvl * 25; } // added to pull strength
+    },
+    gravityDamage: {
+      name: "特異点コア",
+      desc: "重力弾の威力が上がる",
+      baseCost: 115, costMult: 1.9, maxLevel: 3,
+      apply: function(lvl) { return 1 + lvl * 0.3; }
+    },
+    gravityReload: {
+      name: "位相安定装置",
+      desc: "重力弾の連射間隔が短くなる",
+      baseCost: 110, costMult: 1.85, maxLevel: 3,
+      apply: function(lvl) { return Math.max(0.6, 1 - lvl * 0.12); }
+    },
+    gravityPierceDamage: {
+      name: "崩壊増幅器",
+      desc: "貫通時のダメージ減衰が緩和される",
+      baseCost: 130, costMult: 2.0, maxLevel: 2,
+      apply: function(lvl) { return lvl * 0.15; }
     }
   };
 
@@ -2025,8 +2216,14 @@
     function showStickAt(x, y) {
       originX = x;
       originY = y;
-      floatingStick.style.left = x + 'px';
-      floatingStick.style.top = y + 'px';
+      // floatingStick is positioned via `left`/`top` relative to its
+      // containing block (#mobile-controls), but touch/mouse events report
+      // clientX/clientY relative to the viewport. Convert into the
+      // container's local coordinate space so the stick appears exactly
+      // where the finger landed instead of drifting by the HUD's height.
+      var containerRect = mobileControls.getBoundingClientRect();
+      floatingStick.style.left = (x - containerRect.left) + 'px';
+      floatingStick.style.top = (y - containerRect.top) + 'px';
       floatingStick.classList.add('active', 'dragging');
     }
 
@@ -2214,32 +2411,46 @@
   function fireMissile() {
     // Slow-turning homing shot; hits hard to compensate for its long reload.
     var isCrit = Math.random() < playerCritChance();
-    var dmg = 16 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var missileDmgMult = UPGRADES.missileDamage.apply(save.upgrades.missileDamage || 0);
+    var dmg = 16 * playerDamageMult() * missileDmgMult * (isCrit ? playerCritMult() : 1);
+    var turnRate = 3.2 + UPGRADES.missileSpeed.apply(save.upgrades.missileSpeed || 0);
+    var blastRadius = UPGRADES.missileBlast.apply(save.upgrades.missileBlast || 0);
+    var extraCount = UPGRADES.missileCount.apply(save.upgrades.missileCount || 0);
     var by = player.y - player.h/2;
-    bullets.push({
-      x: player.x, y: by, prevX: player.x, prevY: by,
-      vx: 0, vy: -260 * playerBulletSpeedMult(),
-      dmg: dmg, r: 5, pierceLeft: 0, crit: isCrit, weapon: 'missile',
-      homingTargetId: null, turnRate: 3.2
-    });
+
+    var totalMissiles = 1 + extraCount;
+    for (var i = 0; i < totalMissiles; i++) {
+      var spreadX = totalMissiles > 1 ? (i - (totalMissiles - 1) / 2) * 14 : 0;
+      bullets.push({
+        x: player.x + spreadX, y: by, prevX: player.x + spreadX, prevY: by,
+        vx: spreadX * 2, vy: -260 * playerBulletSpeedMult(),
+        dmg: dmg, r: 5, pierceLeft: 0, crit: isCrit, weapon: 'missile',
+        homingTargetId: null, turnRate: turnRate, explodeRadius: blastRadius
+      });
+    }
     playSfx('shoot');
   }
 
   function fireShotgun() {
     // Wide short-range spread; each pellet is weaker but they stack up close.
     var isCrit = Math.random() < playerCritChance();
-    var baseDmg = 5 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var shotgunDmgMult = UPGRADES.shotgunDamage.apply(save.upgrades.shotgunDamage || 0);
+    var baseDmg = 5 * playerDamageMult() * shotgunDmgMult * (isCrit ? playerCritMult() : 1);
     var by = player.y - player.h/2;
-    var pelletCount = 5 + playerSideShots();
-    var spreadAngle = 0.55; // total cone width in radians
+    var extraPellets = UPGRADES.shotgunPellets.apply(save.upgrades.shotgunPellets || 0);
+    var pelletCount = 5 + playerSideShots() + extraPellets;
+    var spreadNarrow = UPGRADES.shotgunSpread.apply(save.upgrades.shotgunSpread || 0);
+    var spreadAngle = Math.max(0.15, 0.55 - spreadNarrow); // total cone width in radians
+    var speedBonus = UPGRADES.shotgunRange.apply(save.upgrades.shotgunRange || 0);
+    var pierce = save.upgrades.shotgunPierce ? UPGRADES.shotgunPierce.apply(save.upgrades.shotgunPierce) : 0;
     for (var i = 0; i < pelletCount; i++) {
       var t = pelletCount === 1 ? 0.5 : i / (pelletCount - 1);
       var angle = -Math.PI / 2 + (t - 0.5) * spreadAngle;
-      var speed = 440 * playerBulletSpeedMult();
+      var speed = 440 * playerBulletSpeedMult() * speedBonus;
       bullets.push({
         x: player.x, y: by, prevX: player.x, prevY: by,
         vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-        dmg: baseDmg, r: 3, pierceLeft: 0, crit: isCrit, weapon: 'shotgun'
+        dmg: baseDmg, r: 3, pierceLeft: pierce, crit: isCrit, weapon: 'shotgun'
       });
     }
     playSfx('shoot');
@@ -2247,13 +2458,17 @@
 
   function fireRailgun() {
     // A single very thick, fully piercing beam-like bolt.
-    var isCrit = Math.random() < playerCritChance();
-    var dmg = 26 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var railgunCritBonus = UPGRADES.railgunCrit.apply(save.upgrades.railgunCrit || 0);
+    var isCrit = Math.random() < (playerCritChance() + railgunCritBonus);
+    var railgunDmgMult = UPGRADES.railgunDamage.apply(save.upgrades.railgunDamage || 0);
+    var dmg = 26 * playerDamageMult() * railgunDmgMult * (isCrit ? playerCritMult() : 1);
+    var widthBonus = UPGRADES.railgunWidth.apply(save.upgrades.railgunWidth || 0);
+    var speedBonus = UPGRADES.railgunSpeed.apply(save.upgrades.railgunSpeed || 0);
     var by = player.y - player.h/2;
     bullets.push({
       x: player.x, y: by, prevX: player.x, prevY: by,
-      vx: 0, vy: -620 * playerBulletSpeedMult(),
-      dmg: dmg, r: 9, pierceLeft: 999, crit: isCrit, weapon: 'railgun'
+      vx: 0, vy: -620 * playerBulletSpeedMult() * speedBonus,
+      dmg: dmg, r: 9 + widthBonus, pierceLeft: 999, crit: isCrit, weapon: 'railgun'
     });
     playSfx('shoot');
   }
@@ -2261,13 +2476,16 @@
   function firePlasma() {
     // Slow orb that explodes in a radius on impact or at max range.
     var isCrit = Math.random() < playerCritChance();
-    var dmg = 14 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var plasmaDmgMult = UPGRADES.plasmaDamage.apply(save.upgrades.plasmaDamage || 0);
+    var dmg = 14 * playerDamageMult() * plasmaDmgMult * (isCrit ? playerCritMult() : 1);
+    var radiusBonus = UPGRADES.plasmaRadius.apply(save.upgrades.plasmaRadius || 0);
+    var speedBonus = UPGRADES.plasmaSpeed.apply(save.upgrades.plasmaSpeed || 0);
     var by = player.y - player.h/2;
     bullets.push({
       x: player.x, y: by, prevX: player.x, prevY: by,
-      vx: 0, vy: -230 * playerBulletSpeedMult(),
+      vx: 0, vy: -230 * playerBulletSpeedMult() * speedBonus,
       dmg: dmg, r: 7, pierceLeft: 0, crit: isCrit, weapon: 'plasma',
-      explodeRadius: 60
+      explodeRadius: 60 + radiusBonus
     });
     playSfx('shoot');
   }
@@ -2275,13 +2493,18 @@
   function fireGravity() {
     // Slow orb that pulls nearby enemies toward its path as it travels.
     var isCrit = Math.random() < playerCritChance();
-    var dmg = 10 * playerDamageMult() * (isCrit ? playerCritMult() : 1);
+    var gravityDmgMult = UPGRADES.gravityDamage.apply(save.upgrades.gravityDamage || 0);
+    var dmg = 10 * playerDamageMult() * gravityDmgMult * (isCrit ? playerCritMult() : 1);
+    var pullRadiusBonus = UPGRADES.gravityPull.apply(save.upgrades.gravityPull || 0);
+    var pullForceBonus = UPGRADES.gravityPullForce.apply(save.upgrades.gravityPullForce || 0);
+    var pierceDamageBonus = UPGRADES.gravityPierceDamage.apply(save.upgrades.gravityPierceDamage || 0);
     var by = player.y - player.h/2;
     bullets.push({
       x: player.x, y: by, prevX: player.x, prevY: by,
       vx: 0, vy: -190 * playerBulletSpeedMult(),
       dmg: dmg, r: 8, pierceLeft: 999, crit: isCrit, weapon: 'gravity',
-      pullRadius: 90
+      pullRadius: 90 + pullRadiusBonus, pullForce: 90 + pullForceBonus,
+      pierceDamageRetention: 1 - Math.max(0, 0.35 - pierceDamageBonus)
     });
     playSfx('shoot');
   }
@@ -2657,7 +2880,8 @@
     player.fireTimer -= dt;
     if (player.surgeTimer > 0) player.surgeTimer -= dt;
     var equippedWeaponKey = isWeaponUnlocked(save.equippedWeapon) ? save.equippedWeapon : 'laser';
-    var fireInterval = playerFireInterval() * (WEAPON_DEFS[equippedWeaponKey].fireIntervalMult || 1);
+    var weaponReloadMult = weaponReloadMultiplier(equippedWeaponKey);
+    var fireInterval = playerFireInterval() * (WEAPON_DEFS[equippedWeaponKey].fireIntervalMult || 1) * weaponReloadMult;
     if (player.surgeTimer > 0 && save.upgrades.fireRateSurge) {
       fireInterval *= (1 - 0.15 * save.upgrades.fireRateSurge);
     }
@@ -2711,12 +2935,13 @@
 
       if (b.weapon === 'gravity' && b.pullRadius) {
         // Pull nearby enemies gently toward the bolt's path as it flies by.
+        var pullForce = b.pullForce || 90;
         for (var gi = 0; gi < enemies.length; gi++) {
           var gen = enemies[gi];
           var gdx = b.x - gen.x, gdy = b.y - gen.y;
           var gdist = Math.hypot(gdx, gdy);
           if (gdist > 0 && gdist < b.pullRadius) {
-            var pull = (1 - gdist / b.pullRadius) * 90 * dt;
+            var pull = (1 - gdist / b.pullRadius) * pullForce * dt;
             gen.x += (gdx / gdist) * pull;
             gen.y += (gdy / gdist) * pull * 0.3;
           }
@@ -2863,6 +3088,11 @@
         if (hit) {
           var dmg = b.dmg;
           if (en.w >= 40) dmg *= (1 + playerBruteBonus());
+          // Gravity bolts lose some punch with each enemy they pass through;
+          // the gravityPierceDamage upgrade softens that falloff.
+          if (b.weapon === 'gravity' && b.hitSet && b.hitSet.length > 0) {
+            dmg *= Math.pow(b.pierceDamageRetention != null ? b.pierceDamageRetention : 0.65, b.hitSet.length);
+          }
           spawnParticles(b.x, b.y, '#9bb862', 4);
 
           if (b.pierceLeft > 0) {
@@ -2875,23 +3105,29 @@
 
           en.hp -= dmg;
 
-          // Plasma splash: damage nearby enemies too, without touching the
-          // enemies array itself (no splice here) so the outer loop we're
-          // inside stays safe — any enemy this kills gets cleaned up on its
-          // own turn through the normal loop next frame.
-          if (b.weapon === 'plasma' && b.explodeRadius) {
-            spawnParticles(b.x, b.y, '#c97dd9', 14);
+          // Splash damage: plasma always splashes; missiles only splash once
+          // the "missileBlast" upgrade has been purchased. Damage nearby
+          // enemies too, without touching the enemies array itself (no
+          // splice here) so the outer loop we're inside stays safe — any
+          // enemy this kills gets cleaned up on its own turn next frame.
+          if ((b.weapon === 'plasma' || b.weapon === 'missile') && b.explodeRadius) {
+            var splashMult = 0.6;
+            if (b.weapon === 'plasma') {
+              splashMult += UPGRADES.plasmaSplashDamage.apply(save.upgrades.plasmaSplashDamage || 0);
+            }
+            var splashColor = b.weapon === 'plasma' ? '#c97dd9' : '#d9863f';
+            spawnParticles(b.x, b.y, splashColor, 14);
             for (var pi = 0; pi < enemies.length; pi++) {
               var pen = enemies[pi];
               if (pen === en) continue;
               var pdist = Math.hypot(pen.x - b.x, pen.y - b.y);
               if (pdist < b.explodeRadius) {
-                pen.hp -= dmg * 0.6;
+                pen.hp -= dmg * splashMult;
               }
             }
             if (bossActive && boss) {
               var pbdist = Math.hypot(boss.x - b.x, boss.y - b.y);
-              if (pbdist < b.explodeRadius) boss.hp -= dmg * 0.6 * (1 - boss.armorPct);
+              if (pbdist < b.explodeRadius) boss.hp -= dmg * splashMult * (1 - boss.armorPct);
             }
           }
 
@@ -3453,6 +3689,11 @@
     document.getElementById('shop-snark-val').textContent = save.snark;
     var pct = inRun ? Math.max(0, player.hp / player.maxHp) * 100 : 100;
     document.getElementById('hp-bar-inner').style.width = pct + '%';
+
+    document.getElementById('level-val').textContent = save.playerLevel;
+    var expNeeded = save.playerLevel >= MAX_PLAYER_LEVEL ? 0 : expForLevel(save.playerLevel);
+    var expPct = expNeeded > 0 ? Math.min(100, (save.playerExp / expNeeded) * 100) : 100;
+    document.getElementById('exp-bar-inner').style.width = expPct + '%';
   }
 
   // ============ Game loop ============
@@ -3623,10 +3864,26 @@
   // ============ Shop ============
   var currentShopOffers = [];
 
+  var WEAPON_UPGRADE_PREFIX = {
+    missile: 'missile', shotgun: 'shotgun', railgun: 'railgun', plasma: 'plasma', gravity: 'gravity'
+  };
+
+  function isWeaponExclusiveUpgrade(key) {
+    return /^(missile|shotgun|railgun|plasma|gravity)[A-Z]/.test(key);
+  }
+
   function eligibleUpgradeKeys() {
     return UPGRADE_KEYS.filter(function(key) {
       var lvl = save.upgrades[key] || 0;
-      return lvl < UPGRADES[key].maxLevel;
+      if (lvl >= UPGRADES[key].maxLevel) return false;
+      // Weapon-exclusive upgrades show up once that weapon is unlocked,
+      // regardless of which weapon is currently equipped — so players can
+      // stock up on a weapon's upgrades before switching to it.
+      if (isWeaponExclusiveUpgrade(key)) {
+        var prefix = key.match(/^(missile|shotgun|railgun|plasma|gravity)/)[1];
+        return isWeaponUnlocked(prefix);
+      }
+      return true;
     });
   }
 
